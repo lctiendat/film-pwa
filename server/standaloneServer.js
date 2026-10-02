@@ -14,6 +14,7 @@ import {
   resolveDrama,
   refreshEpisodeStream,
 } from './dramaCrawler.js';
+import { translateText, translateBatch } from './translateService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -194,7 +195,49 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 9. Static File Serving from dist/
+  // 9. Translation API (Auto-translate)
+  if (pathname === '/api/translate') {
+    try {
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            const json = JSON.parse(body || '{}');
+            const to = json.to || 'vi';
+            if (Array.isArray(json.texts)) {
+              const translated = await translateBatch(json.texts, to);
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: true, translatedTexts: translated }));
+            } else {
+              const translated = await translateText(json.text || '', to);
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: true, translatedText: translated }));
+            }
+          } catch (pe) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: false, error: pe.message }));
+          }
+        });
+        return;
+      }
+
+      const text = urlObj.searchParams.get('text') || '';
+      const to = urlObj.searchParams.get('to') || 'vi';
+      const from = urlObj.searchParams.get('from') || null;
+      const translatedText = await translateText(text, to, from);
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ok: true, originalText: text, translatedText, to }));
+    } catch (e) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // 10. Static File Serving from dist/
   let filePath = path.join(DIST_DIR, pathname);
   if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
     filePath = path.join(filePath, 'index.html');

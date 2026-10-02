@@ -221,3 +221,28 @@ export async function fetchDramaEpisodes(drama, lang = 'vi-VN') {
     watch_url: drama.watch_url || '',
   }));
 }
+
+/**
+ * Auto-Translate Content API
+ */
+export async function translateContent({ text, texts, to = 'vi' }) {
+  try {
+    if (Array.isArray(texts)) {
+      const res = await apiClient.post('/api/translate', { texts, to });
+      if (res.data && res.data.ok) {
+        return res.data.translatedTexts;
+      }
+      return texts;
+    } else if (text) {
+      const res = await apiClient.get(`/api/translate?text=${encodeURIComponent(text)}&to=${encodeURIComponent(to)}`);
+      if (res.data && res.data.ok) {
+        return res.data.translatedText;
+      }
+      return text;
+    }
+  } catch (err) {
+    console.warn('[API] translateContent error:', err.message);
+  }
+  return texts || text || '';
+}
+

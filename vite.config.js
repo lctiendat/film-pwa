@@ -11,6 +11,7 @@ import {
   resolveDrama,
   refreshEpisodeStream,
 } from './server/dramaCrawler.js'
+import { translateText, translateBatch } from './server/translateService.js'
 
 // Full Vite middleware plugin implementing all DramaFlow PRO crawl & streaming API endpoints
 function dramaCrawlerServerPlugin() {
@@ -167,18 +168,44 @@ function dramaCrawlerServerPlugin() {
           return;
         }
 
-        // 9. Legacy /api-episodes compatibility
-        if (pathname === '/api-episodes') {
+        // 10. Translation API (Auto-translate)
+        if (pathname === '/api/translate') {
           try {
-            const watch_url = urlObj.searchParams.get('watch_url') || '';
-            const data = await resolveDrama({ watch_url });
+            if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const json = JSON.parse(body || '{}');
+                  const to = json.to || 'vi';
+                  if (Array.isArray(json.texts)) {
+                    const translated = await translateBatch(json.texts, to);
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ ok: true, translatedTexts: translated }));
+                  } else {
+                    const translated = await translateText(json.text || '', to);
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ ok: true, translatedText: translated }));
+                  }
+                } catch (pe) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ ok: false, error: pe.message }));
+                }
+              });
+              return;
+            }
+
+            const text = urlObj.searchParams.get('text') || '';
+            const to = urlObj.searchParams.get('to') || 'vi';
+            const from = urlObj.searchParams.get('from') || null;
+            const translatedText = await translateText(text, to, from);
             res.setHeader('Content-Type', 'application/json');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.end(JSON.stringify(data));
+            res.end(JSON.stringify({ ok: true, originalText: text, translatedText, to }));
           } catch (e) {
             res.statusCode = 500;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ ok: false, error: e.message, episodes: [] }));
+            res.end(JSON.stringify({ ok: false, error: e.message }));
           }
           return;
         }

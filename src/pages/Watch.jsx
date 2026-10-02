@@ -20,6 +20,7 @@ import {
   LoadingOutlined,
   RotateRightOutlined,
   WarningOutlined,
+  TranslationOutlined,
 } from '@ant-design/icons';
 import Hls from 'hls.js';
 import {
@@ -28,7 +29,10 @@ import {
   fetchDramaDetail,
   refreshEpisodeStream,
   getProxyStreamUrl,
+  searchDramas,
+  translateContent,
 } from '../services/api';
+
 import { isFavorite, saveFavorite, removeFavorite, saveHistory, getSectionsCache } from '../services/db';
 import { useDramaStore } from '../store/useDramaStore';
 import { FALLBACK_DATA } from '../services/fallbackData';
@@ -37,7 +41,7 @@ export function Watch() {
   const { bookId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { selectedProvider, refreshCounts } = useDramaStore();
+  const { selectedProvider, refreshCounts, autoTranslate, setAutoTranslate } = useDramaStore();
 
   const [drama, setDrama] = useState(location.state?.drama || null);
   const [episodes, setEpisodes] = useState([]);
@@ -48,6 +52,16 @@ export function Watch() {
   const [loadingVideo, setLoadingVideo] = useState(false);
   const [streamError, setStreamError] = useState(null);
   const [resumePromptTime, setResumePromptTime] = useState(0);
+
+  // Auto-Translation state
+  const [translatedData, setTranslatedData] = useState({
+    title: '',
+    description: '',
+    category_name: '',
+    tags: [],
+  });
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
 
   // Mode: 'single' (từng tập) vs 'full_movie' (ghép tất cả tập vào 1 tập liên tục)
   const [isFullMovieMode, setIsFullMovieMode] = useState(true);
@@ -88,6 +102,17 @@ export function Watch() {
 
     async function loadData() {
       let current = drama;
+
+      const searchParams = new URLSearchParams(location.search);
+      const directWatchUrl = searchParams.get('watch') || searchParams.get('url');
+      if (!current && directWatchUrl) {
+        current = {
+          book_id: bookId,
+          watch_url: directWatchUrl,
+          title: 'Đang tải thông tin phim...',
+        };
+      }
+
       if (!current) {
         const cached = await getSectionsCache(selectedProvider);
         const dataPool = cached?.sections || FALLBACK_DATA.sections;
@@ -100,30 +125,47 @@ export function Watch() {
         }
       }
 
+      if (!current && bookId) {
+        try {
+          const searchRes = await searchDramas(bookId);
+          if (searchRes && searchRes.length > 0) {
+            current = searchRes.find((x) => x.book_id === bookId) || searchRes[0];
+          }
+        } catch {}
+      }
+
       if (mounted && current) {
-        // Enriched metadata from crawler if available
+        setDrama(current);
+        saveHistory(current);
+        isFavorite(current.book_id).then((fav) => setBookmarked(fav));
+
+        // Load detail and episodes directly from /api/drama
+        let epList = [];
         if (current.watch_url) {
-          fetchDramaDetail({ watch_url: current.watch_url }).then((detail) => {
+          try {
+            const detail = await fetchDramaDetail({ watch_url: current.watch_url, lang: 'vi-VN' });
             if (mounted && detail && detail.ok) {
               setDrama((prev) => ({
                 ...prev,
                 ...detail,
                 slug: detail.slug || prev?.slug,
                 description: detail.description || prev?.description,
+                title: detail.title || prev?.title,
+                poster_url: detail.poster || prev?.poster_url,
               }));
               if (Array.isArray(detail.episodes) && detail.episodes.length > 0) {
-                setEpisodes(detail.episodes);
+                epList = detail.episodes;
               }
             }
-          }).catch(() => {});
+          } catch (e) {
+            console.warn('[Watch] Error fetching drama detail:', e);
+          }
         }
 
-        setDrama(current);
-        saveHistory(current);
-        isFavorite(current.book_id).then((fav) => setBookmarked(fav));
+        if (epList.length === 0) {
+          epList = await fetchDramaEpisodes(current);
+        }
 
-        // Load episodes
-        const epList = await fetchDramaEpisodes(current);
         if (mounted) {
           setEpisodes(epList);
           setCurrentEpisodeIndex(0);
@@ -140,6 +182,55 @@ export function Watch() {
       mounted = false;
     };
   }, [bookId, selectedProvider]);
+
+  // 1b. Auto-Translation Effect (Titles, Synopsis, Category, Tags)
+  useEffect(() => {
+    let mounted = true;
+    if (!drama?.title) return;
+
+    if (!autoTranslate) return;
+
+    async function doTranslate() {
+      setIsTranslating(true);
+      try {
+        const rawTags = Array.isArray(drama.tag_names) ? drama.tag_names : [];
+        const textsToTranslate = [
+          drama.title || '',
+          drama.description || '',
+          drama.category_name || '',
+          ...rawTags,
+        ];
+
+        const res = await translateContent({ texts: textsToTranslate, to: 'vi' });
+        if (mounted && Array.isArray(res) && res.length >= 3) {
+          setTranslatedData({
+            title: res[0] || drama.title,
+            description: res[1] || drama.description,
+            category_name: res[2] || drama.category_name,
+            tags: res.slice(3) || rawTags,
+          });
+        }
+      } catch (err) {
+        console.warn('[Watch] Auto-translate error:', err);
+      } finally {
+        if (mounted) {
+          setIsTranslating(false);
+        }
+      }
+    }
+
+    doTranslate();
+    return () => {
+      mounted = false;
+    };
+  }, [drama?.title, drama?.description, autoTranslate]);
+
+  const isTranslatedActive = autoTranslate && !showOriginal && Boolean(translatedData.title);
+  const displayTitle = isTranslatedActive ? translatedData.title : (drama?.title || '');
+  const displayDescription = isTranslatedActive && translatedData.description ? translatedData.description : (drama?.description || '');
+  const displayCategory = isTranslatedActive && translatedData.category_name ? translatedData.category_name : (drama?.category_name || '');
+  const displayTags = isTranslatedActive && translatedData.tags?.length ? translatedData.tags : (drama?.tag_names || []);
+
 
   // Auto switch batch tab when currentEpisodeIndex changes
   useEffect(() => {
@@ -240,13 +331,22 @@ export function Watch() {
       if (isM3U8 && Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
-          lowLatencyMode: true,
-          backBufferLength: 90,
+          lowLatencyMode: false,
+          backBufferLength: 60,
+          maxBufferLength: 30,
         });
 
         hlsRef.current = hls;
-        hls.loadSource(streamUrl);
         hls.attachMedia(video);
+
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          if (!mounted) return;
+          try {
+            hls.loadSource(streamUrl);
+          } catch (e) {
+            console.warn('[HLS] loadSource error:', e);
+          }
+        });
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (!mounted) return;
@@ -327,8 +427,18 @@ export function Watch() {
       video.pause();
       setIsPlaying(false);
     } else {
-      video.play().then(() => setIsPlaying(true)).catch(() => {
+      video.play().then(() => {
         setIsPlaying(true);
+      }).catch((err) => {
+        console.warn('Playback request error:', err);
+        // Fallback for strict browser autoplay policy: mute and play
+        video.muted = true;
+        video.play().then(() => {
+          setIsPlaying(true);
+          message.info('Video đang phát (đã tắt tiếng). Bạn có thể bật tiếng trên thanh điều khiển.');
+        }).catch(() => {
+          setIsPlaying(true);
+        });
       });
     }
   };
@@ -337,6 +447,11 @@ export function Watch() {
     if (index < 0 || index >= episodes.length) return;
     setCurrentEpisodeIndex(index);
     setIsPlaying(true);
+    setTimeout(() => {
+      if (videoRef.current) {
+        videoRef.current.play().catch(() => {});
+      }
+    }, 120);
   };
 
   const handleNextEpisode = () => {
@@ -620,7 +735,7 @@ export function Watch() {
                     {isFullMovieMode ? `Phim Trọn Bộ • Tập ${currentEpisodeNumber}/${totalEpisodes}` : `Tập ${currentEpisodeNumber} / ${totalEpisodes}`}
                   </span>
                   <span className="rounded-full bg-black/60 backdrop-blur-md px-3 py-1 text-xs font-semibold text-slate-200 border border-white/10">
-                    {drama.category_name}
+                    {displayCategory || drama.category_name}
                   </span>
                 </div>
 
@@ -634,9 +749,9 @@ export function Watch() {
                 </button>
 
                 {/* Bottom Video Meta info */}
-                <div className="w-full text-center">
+                <div className="w-full text-center px-4">
                   <h3 className="text-base font-bold text-white drop-shadow mb-1 line-clamp-1">
-                    {drama.title}
+                    {displayTitle || drama.title}
                   </h3>
                   <p className="text-xs text-slate-300 drop-shadow">
                     {isFullMovieMode ? 'Nhấn để bắt đầu xem trọn bộ liền mạch' : `Nhấn để phát Tập ${currentEpisodeNumber}`}
@@ -811,15 +926,83 @@ export function Watch() {
 
           {/* Drama Title & Synopsis */}
           <div className="rounded-3xl glass-panel p-6 border border-slate-800 shadow-xl">
+            {/* Auto-Translation Control Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-5 p-3 rounded-2xl bg-slate-900/90 border border-slate-750 shadow-inner">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
+                    isTranslatedActive
+                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-md shadow-rose-500/10'
+                      : 'bg-slate-800 text-slate-400 border border-slate-700/80'
+                  }`}
+                >
+                  <TranslationOutlined className="text-base" />
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-white font-display">Tự Động Dịch Tiếng Việt</span>
+                    {isTranslating ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 font-semibold">
+                        <Spin indicator={<LoadingOutlined style={{ fontSize: 11, color: '#fbbf24' }} spin />} /> Đang dịch...
+                      </span>
+                    ) : isTranslatedActive ? (
+                      <span className="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.2 text-[10px] font-bold">
+                        Đã Dịch
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    {autoTranslate
+                      ? showOriginal
+                        ? 'Đang hiển thị văn bản gốc'
+                        : 'Dịch tự động Tiêu đề, Thể loại & Tóm tắt cốt truyện'
+                      : 'Chế độ dịch đang tắt'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {translatedData.title && (
+                  <button
+                    onClick={() => setShowOriginal(!showOriginal)}
+                    className="px-2.5 py-1 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 hover:border-slate-600 transition-colors cursor-pointer"
+                  >
+                    {showOriginal ? 'Xem Bản Dịch TV' : 'Xem Bản Gốc'}
+                  </button>
+                )}
+                <Switch
+                  checked={autoTranslate}
+                  onChange={(checked) => {
+                    setAutoTranslate(checked);
+                    if (checked) {
+                      setShowOriginal(false);
+                      message.success('Đã BẬT tự động dịch Tiếng Việt');
+                    } else {
+                      message.info('Đã TẮT tự động dịch');
+                    }
+                  }}
+                  checkedChildren="BẬT"
+                  unCheckedChildren="TẮT"
+                  className="bg-slate-700"
+                />
+              </div>
+            </div>
+
             <h1 className="text-xl sm:text-2xl font-bold text-white mb-2 font-display">
-              {drama.title}
+              {displayTitle}
             </h1>
 
+            {isTranslatedActive && drama.title && drama.title !== displayTitle && (
+              <p className="text-xs text-slate-400 -mt-1 mb-3 italic">
+                Tên gốc: <span className="text-slate-300 font-medium">{drama.title}</span>
+              </p>
+            )}
+
             <div className="flex flex-wrap items-center gap-2 mb-4">
-              <span className="rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 text-xs font-semibold">
-                {drama.category_name}
+              <span className="rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2.5 py-0.5 text-xs font-semibold">
+                {displayCategory || drama.category_name}
               </span>
-              {drama.tag_names?.map((tag, idx) => (
+              {displayTags?.map((tag, idx) => (
                 <span
                   key={idx}
                   className="rounded-md bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 text-xs"
@@ -830,8 +1013,8 @@ export function Watch() {
             </div>
 
             <h4 className="text-xs uppercase tracking-wider font-bold text-slate-400 mb-2">Tóm tắt cốt truyện</h4>
-            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed whitespace-pre-line max-h-48 overflow-y-auto pr-1">
-              {drama.description}
+            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed whitespace-pre-line max-h-56 overflow-y-auto pr-1">
+              {displayDescription}
             </p>
           </div>
 

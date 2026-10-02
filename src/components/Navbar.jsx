@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Badge, Button } from 'antd';
+import { Badge, Button, Tooltip, message } from 'antd';
 import {
   PlayCircleFilled,
   HeartFilled,
@@ -9,14 +9,16 @@ import {
   WifiOutlined,
   DisconnectOutlined,
   InfoCircleOutlined,
+  TranslationOutlined,
 } from '@ant-design/icons';
 import { useDramaStore } from '../store/useDramaStore';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
+
 export function Navbar() {
   const location = useLocation();
-  const { favoritesCount, refreshCounts } = useDramaStore();
+  const { favoritesCount, refreshCounts, autoTranslate, setAutoTranslate } = useDramaStore();
   const { isInstallable, promptInstall } = useInstallPrompt();
   const { isOnline } = useOnlineStatus();
 
@@ -84,8 +86,34 @@ export function Navbar() {
             })}
           </nav>
 
-          {/* Right Actions: Online badge & Install App */}
-          <div className="flex items-center gap-2.5">
+          {/* Right Actions: Auto Translate toggle, Online badge & Install App */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Auto Translate Toggle */}
+            <Tooltip title={autoTranslate ? 'Tự động dịch Tiếng Việt: Đang BẬT' : 'Tự động dịch Tiếng Việt: Đang TẮT'}>
+              <button
+                onClick={() => {
+                  const nextState = !autoTranslate;
+                  setAutoTranslate(nextState);
+                  if (nextState) {
+                    message.success('Đã BẬT tính năng tự động dịch Tiếng Việt');
+                  } else {
+                    message.info('Đã TẮT tự động dịch');
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+                  autoTranslate
+                    ? 'bg-rose-500/15 text-rose-300 border-rose-500/30 hover:bg-rose-500/25'
+                    : 'bg-slate-850 text-slate-400 border-slate-700/80 hover:text-slate-200'
+                }`}
+              >
+                <TranslationOutlined className={autoTranslate ? 'text-rose-400 text-sm' : 'text-slate-400 text-sm'} />
+                <span className="hidden sm:inline">Dịch:</span>
+                <span className={`text-[11px] font-bold ${autoTranslate ? 'text-rose-300' : 'text-slate-400'}`}>
+                  {autoTranslate ? 'BẬT' : 'TẮT'}
+                </span>
+              </button>
+            </Tooltip>
+
             {/* Online Status Indicator */}
             <div
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
