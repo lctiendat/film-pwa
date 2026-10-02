@@ -117,20 +117,29 @@ export function Watch() {
     let mounted = true;
 
     async function loadData() {
-      let current = drama || location.state?.drama || null;
-
       const searchParams = new URLSearchParams(location.search);
       const directWatchUrl = searchParams.get('watch') || searchParams.get('url');
       const directTitle = searchParams.get('title');
       const directProvider = searchParams.get('provider');
 
-      if (!current && directWatchUrl) {
-        current = {
-          book_id: bookId,
-          watch_url: directWatchUrl,
-          title: directTitle ? decodeURIComponent(directTitle) : 'Đang tải thông tin phim...',
-          category_name: directProvider ? decodeURIComponent(directProvider) : '',
-        };
+      // Check location state only if it matches current bookId
+      let current = null;
+      if (location.state?.drama && String(location.state.drama.book_id) === String(bookId)) {
+        current = { ...location.state.drama };
+      }
+
+      // If URL has direct watch url, always ensure it is attached
+      if (directWatchUrl) {
+        if (!current) {
+          current = {
+            book_id: bookId,
+            watch_url: directWatchUrl,
+            title: directTitle ? decodeURIComponent(directTitle) : 'Đang tải thông tin phim...',
+            category_name: directProvider ? decodeURIComponent(directProvider) : '',
+          };
+        } else if (!current.watch_url) {
+          current.watch_url = directWatchUrl;
+        }
       }
 
       // Check IndexedDB history and favorites first
