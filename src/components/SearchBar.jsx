@@ -42,7 +42,7 @@ export function SearchBar() {
   };
 
   const handleTagClick = (tag) => {
-    if (tag === 'Tất cả') {
+    if (tag === 'Tất cả' || activeTag === tag) {
       setActiveTag('all');
     } else {
       setActiveTag(tag);

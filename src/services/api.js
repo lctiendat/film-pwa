@@ -187,7 +187,12 @@ export async function fetchDramaEpisodes(drama, lang = 'vi-VN') {
   const watchUrl = drama.watch_url || drama.url || '';
   if (watchUrl) {
     try {
-      const detail = await fetchDramaDetail({ watch_url: watchUrl, lang });
+      let detail = await fetchDramaDetail({ watch_url: watchUrl, lang });
+      if (!detail || !detail.ok || !Array.isArray(detail.episodes) || detail.episodes.length === 0) {
+        // Fallback retry with id-ID (upstream native store)
+        detail = await fetchDramaDetail({ watch_url: watchUrl, lang: 'id-ID' });
+      }
+
       if (detail && detail.ok && Array.isArray(detail.episodes) && detail.episodes.length > 0) {
         const episodes = detail.episodes;
 
@@ -212,16 +217,15 @@ export async function fetchDramaEpisodes(drama, lang = 'vi-VN') {
     }
   }
 
-  // 4. Fallback: generate episodes with sample stream
+  // 4. Fallback: generate on-demand episode placeholders (NEVER inject Dragon Lord into other films!)
   const count = drama.chapter_count || 45;
-  const sampleStream = dragonLordEpisodes[0]?.play_url || '';
   return Array.from({ length: count }, (_, i) => ({
     id: i + 1,
     route_episode_number: i + 1,
     number: i + 1,
-    title: `Episode ${i + 1}`,
-    play_url: sampleStream,
-    is_playable: Boolean(sampleStream),
+    title: `Tập ${i + 1}`,
+    play_url: '',
+    is_playable: true,
     watch_url: drama.watch_url || '',
   }));
 }

@@ -14,7 +14,7 @@ export const useDramaStore = create((set, get) => ({
   subtitleFontSize: typeof window !== 'undefined' ? (localStorage.getItem('df_sub_size') || 'md') : 'md',
   subtitleOffset: 0.0,
 
-  setSelectedProvider: (provider) => set({ selectedProvider: provider, selectedTab: '' }),
+  setSelectedProvider: (provider) => set({ selectedProvider: provider, selectedTab: '', activeTag: 'all' }),
   setSelectedTab: (tab) => set({ selectedTab: tab }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setActiveTag: (tag) => set({ activeTag: tag }),

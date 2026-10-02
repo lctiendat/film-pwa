@@ -232,9 +232,29 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
     poster = normalizePosterUrl(posterMatch[1]);
   }
 
-  // Extract drama slug early
-  const slugMatch = finalUrl.match(/\/detail\/watch\/([^\/?#]+)/) || watchUrl.match(/\/detail\/watch\/([^\/?#]+)/);
+  // Extract drama slug early (handles /detail/watch/:slug, /detail/dummy/:prov/:id, etc.)
+  const slugMatch = finalUrl.match(/\/detail\/(?:watch|dummy)(?:\/[^\/?#]+)?\/([^\/?#]+)/) ||
+                    watchUrl.match(/\/detail\/(?:watch|dummy)(?:\/[^\/?#]+)?\/([^\/?#]+)/);
   const dramaSlug = slugMatch ? slugMatch[1] : (slug || '');
+
+  // Step 1b: If finalUrl was redirected to home page (e.g. narto-drama.com/ or narto-drama.com/?lang=...)
+  // it means search/import failed with lang=vi-VN. Try with the native store lang=id-ID / en-US!
+  if (finalUrl === BASE_URL || finalUrl === `${BASE_URL}/` || finalUrl.startsWith(`${BASE_URL}/?`)) {
+    console.warn(`[DramaCrawler] search/import redirected to home. Retrying with id-ID fallback...`);
+    const fallbackUrl = watchUrl.includes('lang=')
+      ? watchUrl.replace(/lang=[^&]+/, 'lang=id-ID').replace(/target_lang=[^&]+/, 'target_lang=id-ID')
+      : `${watchUrl}&lang=id-ID&target_lang=id-ID`;
+    try {
+      const fbRes = await fetch(fallbackUrl, { headers, redirect: 'follow' });
+      if (fbRes.url !== BASE_URL && fbRes.url !== `${BASE_URL}/`) {
+        pageRes = fbRes;
+        html = await fbRes.text();
+        finalUrl = fbRes.url;
+      }
+    } catch (e) {
+      console.warn('[DramaCrawler] Fallback fetch failed:', e.message);
+    }
+  }
 
   // Extract episodeItemsRaw
   let episodes = [];
@@ -384,13 +404,12 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
       thumb_url: item.thumb_url || poster,
       subtitle_url: subUrl,
       multi_subtitles: multiSubs,
-      is_playable: !!(playUrl || item.direct_play_url),
+      is_playable: true,
       is_hls: playUrl.includes('.m3u8') || item.browser_prefetch_mode === 'hls'
     };
   });
 
-
-  const isOk = cleanEpisodes.length > 0 && cleanEpisodes.some(e => e.play_url || e.direct_play_url);
+  const isOk = cleanEpisodes.length > 0;
 
   return {
     ok: isOk,
@@ -411,13 +430,27 @@ export async function refreshEpisodeStream({ watch_url, slug, ep = '1', lang = '
   let dramaSlug = slug;
 
   if (!dramaSlug && watch_url) {
-    const match = watch_url.match(/\/detail\/watch\/([^\/?#]+)(?:\/(\d+))?/);
+    const match = watch_url.match(/\/detail\/(?:watch|dummy)(?:\/[^\/?#]+)?\/([^\/?#]+)(?:\/(\d+))?/);
     if (match) {
       dramaSlug = match[1];
       if (!ep && match[2]) {
         epNum = parseInt(match[2], 10);
       }
     }
+  }
+
+  // If still no slug and watch_url is search/import, follow redirect to extract slug
+  if (!dramaSlug && watch_url && watch_url.includes('/search/import')) {
+    try {
+      const res = await fetch(watch_url, { headers: getHeaders(), redirect: 'follow' });
+      const m = res.url.match(/\/detail\/(?:watch|dummy)(?:\/[^\/?#]+)?\/([^\/?#]+)(?:\/(\d+))?/);
+      if (m) {
+        dramaSlug = m[1];
+        if (!ep && m[2]) {
+          epNum = parseInt(m[2], 10);
+        }
+      }
+    } catch {}
   }
 
   if (!dramaSlug) {

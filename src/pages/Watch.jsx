@@ -35,7 +35,7 @@ import {
 import { fetchSubtitle, translateSubtitle, autoGenerateSubtitles } from '../services/subtitleService';
 import { SubtitleOverlay } from '../components/SubtitleOverlay';
 import { SubtitleSettingsModal } from '../components/SubtitleSettingsModal';
-import { isFavorite, saveFavorite, removeFavorite, saveHistory, getSectionsCache } from '../services/db';
+import { isFavorite, saveFavorite, removeFavorite, saveHistory, getSectionsCache, getDB } from '../services/db';
 import { useDramaStore } from '../store/useDramaStore';
 import { FALLBACK_DATA } from '../services/fallbackData';
 
@@ -120,28 +120,71 @@ export function Watch() {
     } catch {}
   };
 
+  // Reset state on drama change
+  useEffect(() => {
+    setDrama(location.state?.drama || null);
+    setEpisodes([]);
+    setCurrentEpisodeIndex(0);
+    setLoading(true);
+    setStreamError(null);
+  }, [bookId]);
+
   // 1. Load Drama Info & Full Details
   useEffect(() => {
     let mounted = true;
 
     async function loadData() {
-      let current = drama;
+      let current = drama || location.state?.drama || null;
 
       const searchParams = new URLSearchParams(location.search);
       const directWatchUrl = searchParams.get('watch') || searchParams.get('url');
+      const directTitle = searchParams.get('title');
+      const directProvider = searchParams.get('provider');
+
       if (!current && directWatchUrl) {
         current = {
           book_id: bookId,
           watch_url: directWatchUrl,
-          title: 'Đang tải thông tin phim...',
+          title: directTitle ? decodeURIComponent(directTitle) : 'Đang tải thông tin phim...',
+          category_name: directProvider ? decodeURIComponent(directProvider) : '',
         };
       }
 
+      // Check IndexedDB history and favorites first
+      if (!current && bookId) {
+        try {
+          const db = await getDB();
+          const inHist = await db.get('history', bookId);
+          if (inHist) {
+            current = inHist;
+          } else {
+            const inFav = await db.get('favorites', bookId);
+            if (inFav) current = inFav;
+          }
+
+          // Check all cached sections across all providers
+          if (!current && db.objectStoreNames.contains('sections_cache')) {
+            const allCaches = await db.getAll('sections_cache');
+            for (const c of allCaches) {
+              for (const sec of (c.data?.sections || [])) {
+                const found = sec.items?.find((i) => String(i.book_id) === String(bookId));
+                if (found) {
+                  current = found;
+                  break;
+                }
+              }
+              if (current) break;
+            }
+          }
+        } catch (e) {
+          console.warn('[Watch] Error looking up cached drama:', e);
+        }
+      }
+
+      // Check fallback data sections
       if (!current) {
-        const cached = await getSectionsCache(selectedProvider);
-        const dataPool = cached?.sections || FALLBACK_DATA.sections;
-        for (const sec of dataPool) {
-          const found = sec.items?.find((i) => i.book_id === bookId);
+        for (const sec of (FALLBACK_DATA.sections || [])) {
+          const found = sec.items?.find((i) => String(i.book_id) === String(bookId));
           if (found) {
             current = found;
             break;
@@ -149,13 +192,27 @@ export function Watch() {
         }
       }
 
+      // Exact search query by bookId if still not found (NEVER pick searchRes[0] if mismatch)
       if (!current && bookId) {
         try {
           const searchRes = await searchDramas(bookId);
           if (searchRes && searchRes.length > 0) {
-            current = searchRes.find((x) => x.book_id === bookId) || searchRes[0];
+            const exact = searchRes.find((x) => String(x.book_id) === String(bookId));
+            if (exact) {
+              current = exact;
+            }
           }
         } catch {}
+      }
+
+      // If still no metadata, build minimal current object without hijacking to Dragon Lord
+      if (!current && bookId) {
+        current = {
+          book_id: bookId,
+          title: directTitle ? decodeURIComponent(directTitle) : `Phim #${bookId}`,
+          watch_url: directWatchUrl || '',
+          category_name: directProvider ? decodeURIComponent(directProvider) : '',
+        };
       }
 
       if (mounted && current) {
@@ -167,7 +224,12 @@ export function Watch() {
         let epList = [];
         if (current.watch_url) {
           try {
-            const detail = await fetchDramaDetail({ watch_url: current.watch_url, lang: 'vi-VN' });
+            let detail = await fetchDramaDetail({ watch_url: current.watch_url, lang: 'vi-VN' });
+            if (!detail || !detail.ok || !Array.isArray(detail.episodes) || detail.episodes.length === 0) {
+              // Retry with upstream native language (id-ID)
+              detail = await fetchDramaDetail({ watch_url: current.watch_url, lang: 'id-ID' });
+            }
+
             if (mounted && detail && detail.ok) {
               setDrama((prev) => ({
                 ...prev,
@@ -205,7 +267,7 @@ export function Watch() {
     return () => {
       mounted = false;
     };
-  }, [bookId, selectedProvider]);
+  }, [bookId, location.search]);
 
   // 1b. Auto-Translation Effect (Titles, Synopsis, Category, Tags)
   useEffect(() => {

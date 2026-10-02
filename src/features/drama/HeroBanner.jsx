@@ -82,7 +82,10 @@ export function HeroBanner({ drama }) {
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Link to={`/watch/${drama.book_id}`} state={{ drama }}>
+            <Link
+              to={`/watch/${drama.book_id}?provider=${encodeURIComponent(drama.category_name || '')}&watch=${encodeURIComponent(drama.watch_url || '')}&title=${encodeURIComponent(drama.title || '')}`}
+              state={{ drama }}
+            >
               <Button
                 type="primary"
                 size="large"

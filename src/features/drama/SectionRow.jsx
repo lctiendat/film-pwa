@@ -11,11 +11,26 @@ export function SectionRow({ section, activeFilter = 'all' }) {
 
   // Filter items by tag if specified
   const filteredItems = section.items.filter((item) => {
-    if (activeFilter === 'all') return true;
-    return item.tag_names?.some(
-      (tag) => tag.toLowerCase() === activeFilter.toLowerCase()
+    if (!activeFilter || activeFilter === 'all') return true;
+    const filterLower = activeFilter.toLowerCase().trim();
+
+    // Check in tag_names
+    const hasTag = item.tag_names?.some(
+      (tag) => tag.toLowerCase().includes(filterLower) || filterLower.includes(tag.toLowerCase())
     );
+    if (hasTag) return true;
+
+    // Fallback: Check title, description, or category if tags are missing
+    const hasTitle = item.title?.toLowerCase().includes(filterLower);
+    const hasDesc = item.description?.toLowerCase().includes(filterLower);
+    const hasCat = item.category_name?.toLowerCase().includes(filterLower);
+    return hasTitle || hasDesc || hasCat;
   });
+
+  // If no items in this section match the filter, hide this section row
+  if (filteredItems.length === 0) {
+    return null;
+  }
 
   const displayItems = showAll ? filteredItems : filteredItems.slice(0, 8);
 
@@ -34,6 +49,7 @@ export function SectionRow({ section, activeFilter = 'all' }) {
 
         {filteredItems.length > 8 && (
           <button
+            type="button"
             onClick={() => setShowAll(!showAll)}
             className="text-xs font-medium text-rose-400 hover:text-rose-300 transition-colors flex items-center gap-1 cursor-pointer"
           >
@@ -42,18 +58,12 @@ export function SectionRow({ section, activeFilter = 'all' }) {
         )}
       </div>
 
-      {filteredItems.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-500 text-sm">
-          Không có phim nào phù hợp với bộ lọc hiện tại trong mục này.
-        </div>
-      ) : (
-        /* Responsive Grid */
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-4 sm:gap-6">
-          {displayItems.map((item) => (
-            <DramaCard key={item.book_id} drama={item} />
-          ))}
-        </div>
-      )}
+      {/* Responsive Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-4 sm:gap-6">
+        {displayItems.map((item) => (
+          <DramaCard key={item.book_id} drama={item} />
+        ))}
+      </div>
     </div>
   );
 }

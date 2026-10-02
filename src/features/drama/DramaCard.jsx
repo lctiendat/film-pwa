@@ -47,7 +47,7 @@ export function DramaCard({ drama }) {
     <div className="group relative flex flex-col overflow-hidden rounded-2xl glass-card transition-all duration-300">
       {/* Poster Image Container */}
       <Link
-        to={`/watch/${drama.book_id}`}
+        to={`/watch/${drama.book_id}?provider=${encodeURIComponent(drama.category_name || '')}&watch=${encodeURIComponent(drama.watch_url || '')}&title=${encodeURIComponent(drama.title || '')}`}
         state={{ drama }}
         className="relative aspect-[3/4] w-full overflow-hidden bg-slate-900"
       >

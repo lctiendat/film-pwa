@@ -97,11 +97,27 @@ export function Home() {
     });
 
     if (activeTag !== 'all') {
-      allSearchItems = allSearchItems.filter((item) =>
-        item.tag_names?.some((t) => t.toLowerCase() === activeTag.toLowerCase())
-      );
+      const tagLower = activeTag.toLowerCase().trim();
+      allSearchItems = allSearchItems.filter((item) => {
+        const matchTag = item.tag_names?.some((t) => t.toLowerCase().includes(tagLower) || tagLower.includes(t.toLowerCase()));
+        const matchText = item.title?.toLowerCase().includes(tagLower) || item.description?.toLowerCase().includes(tagLower);
+        return matchTag || matchText;
+      });
     }
   }
+
+  // Count total matching items across all sections for the active filter
+  const totalFilteredCount = sections.reduce((acc, sec) => {
+    if (!sec.items) return acc;
+    if (activeTag === 'all') return acc + sec.items.length;
+    const tagLower = activeTag.toLowerCase().trim();
+    const count = sec.items.filter((it) => {
+      const matchTag = it.tag_names?.some((t) => t.toLowerCase().includes(tagLower) || tagLower.includes(t.toLowerCase()));
+      const matchText = it.title?.toLowerCase().includes(tagLower) || it.description?.toLowerCase().includes(tagLower);
+      return matchTag || matchText;
+    }).length;
+    return acc + count;
+  }, 0);
 
   // Data source label
   const dataSource = data?._source;
@@ -117,6 +133,25 @@ export function Home() {
         activeProvider={activeProvider}
         onSelect={handleSelectProvider}
       />
+
+      {/* Active Genre Filter Indicator Bar */}
+      {activeTag !== 'all' && (
+        <div className="flex items-center justify-between mb-4 px-4 py-2.5 rounded-2xl bg-rose-600/15 border border-rose-500/30 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-300">Đang lọc theo thể loại:</span>
+            <span className="font-semibold text-rose-300 bg-rose-500/25 px-2.5 py-0.5 rounded-lg border border-rose-500/30">
+              {activeTag}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTag('all')}
+            className="text-rose-400 hover:text-white hover:underline font-semibold cursor-pointer"
+          >
+            ✕ Xóa bộ lọc (Xem tất cả phim)
+          </button>
+        </div>
+      )}
 
       {/* Source Status Indicator */}
       <div className="flex items-center justify-between mb-4 text-xs text-slate-400">
@@ -203,7 +238,24 @@ export function Home() {
           {featuredHero && <HeroBanner drama={featuredHero} />}
 
           {/* Render All Sections (Hot, New, Original, Asian, etc.) */}
-          {sections.length > 0 ? (
+          {sections.length > 0 && activeTag !== 'all' && totalFilteredCount === 0 ? (
+            <div className="py-16 text-center">
+              <Empty
+                description={
+                  <div className="flex flex-col items-center gap-2 text-slate-400">
+                    <span>Không có phim nào thuộc thể loại "{activeTag}" ở nhà cung cấp {activeProviderLabel}.</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTag('all')}
+                      className="mt-3 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs cursor-pointer shadow-md shadow-rose-600/30"
+                    >
+                      Xem tất cả phim của {activeProviderLabel}
+                    </button>
+                  </div>
+                }
+              />
+            </div>
+          ) : sections.length > 0 ? (
             sections.map((section) => (
               <SectionRow
                 key={section.tab_key || section.tab_label}
