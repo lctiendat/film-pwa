@@ -47,8 +47,9 @@ export async function fetchLiveProviders() {
  * Fetch sections for a provider with offline caching and multi-language support
  */
 export async function fetchProviderSections(provider = '', lang = 'vi-VN', page = 1) {
+  const provKey = (!provider || provider === 'all') ? 'anyreel' : provider;
   const query = new URLSearchParams({
-    provider: provider || 'anyreel',
+    provider: provKey,
     lang: lang || 'vi-VN',
     page: String(page || 1),
   }).toString();
@@ -57,9 +58,10 @@ export async function fetchProviderSections(provider = '', lang = 'vi-VN', page 
   try {
     const response = await apiClient.get(`/api/sections?${query}`);
     if (response.data && response.data.ok) {
-      await saveSectionsCache(provider || 'default', response.data);
+      await saveSectionsCache(provKey, response.data);
       return {
         ...response.data,
+        active_provider: response.data.active_provider || provKey,
         _source: 'network',
       };
     }
@@ -68,10 +70,11 @@ export async function fetchProviderSections(provider = '', lang = 'vi-VN', page 
   }
 
   // Tier 2: Check IndexedDB cache
-  const cached = await getSectionsCache(provider || 'default');
+  const cached = await getSectionsCache(provKey);
   if (cached && cached.ok) {
     return {
       ...cached,
+      active_provider: cached.active_provider || provKey,
       _source: 'cache',
     };
   }
@@ -79,6 +82,7 @@ export async function fetchProviderSections(provider = '', lang = 'vi-VN', page 
   // Tier 3: Built-in fallback dataset
   return {
     ...FALLBACK_DATA,
+    active_provider: provKey,
     _source: 'fallback',
   };
 }

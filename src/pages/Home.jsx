@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Spin, Alert, Empty } from 'antd';
-import { LoadingOutlined, CheckCircleOutlined, CloudSyncOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { LoadingOutlined, CheckCircleOutlined, CloudSyncOutlined, DatabaseOutlined, SyncOutlined } from '@ant-design/icons';
 import { fetchProviderSections } from '../services/api';
 import { useDramaStore } from '../store/useDramaStore';
+import { FALLBACK_DATA } from '../services/fallbackData';
 import { HeroBanner } from '../features/drama/HeroBanner';
 import { SectionRow } from '../features/drama/SectionRow';
 import { DramaCard } from '../features/drama/DramaCard';
@@ -11,9 +13,38 @@ import { ProviderSelector } from '../components/ProviderSelector';
 import { SearchBar } from '../components/SearchBar';
 
 export function Home() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlProvider = searchParams.get('provider') || '';
   const { selectedProvider, setSelectedProvider, searchQuery, activeTag } = useDramaStore();
 
-  // Use TanStack React Query to fetch provider sections
+  // Active provider prioritizes URL query param, falls back to store, then 'anyreel'
+  const activeProvider = urlProvider || selectedProvider || 'anyreel';
+
+  // Keep store in sync when URL changes (e.g. browser back/forward, direct link)
+  useEffect(() => {
+    if (urlProvider && urlProvider !== selectedProvider) {
+      setSelectedProvider(urlProvider);
+    }
+  }, [urlProvider, selectedProvider, setSelectedProvider]);
+
+  // Handle provider selection: update both Zustand and browser URL
+  const handleSelectProvider = (provKey) => {
+    const key = (!provKey || provKey === 'all') ? 'all' : provKey;
+    setSelectedProvider(key);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (key && key !== 'all') {
+        next.set('provider', key);
+      } else {
+        next.delete('provider');
+      }
+      return next;
+    }, { replace: false });
+  };
+
+  const queryProvider = activeProvider === 'all' ? 'anyreel' : activeProvider;
+
+  // Use TanStack React Query to fetch provider sections with placeholder retention
   const {
     data,
     isLoading,
@@ -22,15 +53,22 @@ export function Home() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['provider-sections', selectedProvider],
-    queryFn: () => fetchProviderSections(selectedProvider),
+    queryKey: ['provider-sections', queryProvider],
+    queryFn: () => fetchProviderSections(queryProvider),
+    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000, // 5 minutes fresh
     gcTime: 30 * 60 * 1000,
   });
 
-  const providers = data?.providers || [];
+  const providers = (data?.providers && data.providers.length > 0)
+    ? data.providers
+    : (FALLBACK_DATA.providers || []);
+
   const sections = data?.sections || [];
-  const activeProvider = data?.active_provider || selectedProvider;
+
+  // Active provider display label
+  const activeProviderObj = providers.find((p) => p.key?.toLowerCase() === activeProvider.toLowerCase());
+  const activeProviderLabel = activeProviderObj?.label || (activeProvider === 'all' ? 'Tất cả' : activeProvider);
 
   // Extract featured hero item (first item in Hot section or first available item)
   const hotSection = sections.find((s) => s.tab_label?.toLowerCase().includes('hot')) || sections[0];
@@ -73,26 +111,24 @@ export function Home() {
       {/* Search Bar with React Hook Form & Zod */}
       <SearchBar />
 
-      {/* Provider Selector Bar */}
-      {providers.length > 0 && (
-        <ProviderSelector
-          providers={providers}
-          activeProvider={activeProvider}
-          onSelect={(provKey) => setSelectedProvider(provKey)}
-        />
-      )}
+      {/* Provider Selector Bar - Always mounted with Fallback if needed */}
+      <ProviderSelector
+        providers={providers}
+        activeProvider={activeProvider}
+        onSelect={handleSelectProvider}
+      />
 
       {/* Source Status Indicator */}
       <div className="flex items-center justify-between mb-4 text-xs text-slate-400">
         <div className="flex items-center gap-2">
           {dataSource === 'network' && (
             <span className="flex items-center gap-1 text-emerald-400">
-              <CheckCircleOutlined /> Dữ liệu trực tuyến từ máy chủ
+              <CheckCircleOutlined /> Dữ liệu trực tuyến từ máy chủ ({activeProviderLabel})
             </span>
           )}
           {dataSource === 'cache' && (
             <span className="flex items-center gap-1 text-amber-400">
-              <DatabaseOutlined /> Đang đọc từ bộ nhớ đệm IndexedDB (Offline)
+              <DatabaseOutlined /> Đang đọc từ bộ nhớ đệm ({activeProviderLabel})
             </span>
           )}
           {dataSource === 'fallback' && (
@@ -100,18 +136,18 @@ export function Home() {
               <DatabaseOutlined /> Chế độ dự phòng ngoại tuyến
             </span>
           )}
-          {isFetching && !isLoading && (
-            <span className="text-slate-400 flex items-center gap-1">
-              <CloudSyncOutlined className="animate-spin" /> Đang đồng bộ...
+          {isFetching && (
+            <span className="text-rose-400 flex items-center gap-1.5 font-medium animate-pulse">
+              <SyncOutlined className="animate-spin" /> Đang tải phim từ {activeProviderLabel}...
             </span>
           )}
         </div>
       </div>
 
-      {isLoading ? (
+      {isLoading && !data ? (
         <div className="flex flex-col items-center justify-center py-24">
           <Spin indicator={<LoadingOutlined style={{ fontSize: 36, color: '#e11d48' }} spin />} />
-          <span className="mt-4 text-sm text-slate-400">Đang tải danh sách phim...</span>
+          <span className="mt-4 text-sm text-slate-400">Đang tải danh sách phim từ {activeProviderLabel}...</span>
         </div>
       ) : isError ? (
         <div className="my-8">
@@ -162,19 +198,31 @@ export function Home() {
         </div>
       ) : (
         /* Standard Home View */
-        <>
+        <div className={`transition-opacity duration-300 ${isFetching ? 'opacity-50' : 'opacity-100'}`}>
           {/* Top Hero Banner */}
           {featuredHero && <HeroBanner drama={featuredHero} />}
 
           {/* Render All Sections (Hot, New, Original, Asian, etc.) */}
-          {sections.map((section) => (
-            <SectionRow
-              key={section.tab_key || section.tab_label}
-              section={section}
-              activeFilter={activeTag}
-            />
-          ))}
-        </>
+          {sections.length > 0 ? (
+            sections.map((section) => (
+              <SectionRow
+                key={section.tab_key || section.tab_label}
+                section={section}
+                activeFilter={activeTag}
+              />
+            ))
+          ) : !isFetching ? (
+            <div className="py-16 text-center">
+              <Empty
+                description={
+                  <span className="text-slate-400">
+                    Chưa có danh mục phim từ {activeProviderLabel}. Vui lòng chọn nhà cung cấp khác.
+                  </span>
+                }
+              />
+            </div>
+          ) : null}
+        </div>
       )}
     </div>
   );

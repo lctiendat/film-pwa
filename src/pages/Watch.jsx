@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useLocation, Link, useNavigate } from 'react-router-dom';
 import { Button, Tag, message, Tooltip, Switch, Spin } from 'antd';
 import {
@@ -32,16 +32,32 @@ import {
   searchDramas,
   translateContent,
 } from '../services/api';
-
+import { fetchSubtitle, translateSubtitle, autoGenerateSubtitles } from '../services/subtitleService';
+import { SubtitleOverlay } from '../components/SubtitleOverlay';
+import { SubtitleSettingsModal } from '../components/SubtitleSettingsModal';
 import { isFavorite, saveFavorite, removeFavorite, saveHistory, getSectionsCache } from '../services/db';
 import { useDramaStore } from '../store/useDramaStore';
 import { FALLBACK_DATA } from '../services/fallbackData';
+
 
 export function Watch() {
   const { bookId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { selectedProvider, refreshCounts, autoTranslate, setAutoTranslate } = useDramaStore();
+  const {
+    selectedProvider,
+    refreshCounts,
+    autoTranslate,
+    setAutoTranslate,
+    subtitlesEnabled,
+    setSubtitlesEnabled,
+    subtitleLanguage,
+    setSubtitleLanguage,
+    subtitleFontSize,
+    setSubtitleFontSize,
+    subtitleOffset,
+    setSubtitleOffset,
+  } = useDramaStore();
 
   const [drama, setDrama] = useState(location.state?.drama || null);
   const [episodes, setEpisodes] = useState([]);
@@ -53,7 +69,7 @@ export function Watch() {
   const [streamError, setStreamError] = useState(null);
   const [resumePromptTime, setResumePromptTime] = useState(0);
 
-  // Auto-Translation state
+  // Auto-Translation state (Title, Synopsis)
   const [translatedData, setTranslatedData] = useState({
     title: '',
     description: '',
@@ -62,6 +78,14 @@ export function Watch() {
   });
   const [isTranslating, setIsTranslating] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+
+  // Subtitle (CC) state
+  const [rawSubtitleCues, setRawSubtitleCues] = useState([]);
+  const [translatedSubtitleCues, setTranslatedSubtitleCues] = useState([]);
+  const [customSubtitle, setCustomSubtitle] = useState(null);
+  const [isTranslatingSubtitles, setIsTranslatingSubtitles] = useState(false);
+  const [subtitlesModalOpen, setSubtitlesModalOpen] = useState(false);
+
 
   // Mode: 'single' (từng tập) vs 'full_movie' (ghép tất cả tập vào 1 tập liên tục)
   const [isFullMovieMode, setIsFullMovieMode] = useState(true);
@@ -252,6 +276,90 @@ export function Watch() {
   const estTotalSeconds = totalEpisodes * estEpisodeSeconds;
   const currentTotalSeconds = currentEpisodeIndex * estEpisodeSeconds + currentTime;
 
+  // 1c. Subtitle Loading & Real-time Vietnamese Translation Effect
+  useEffect(() => {
+    let mounted = true;
+    if (!activeEpisode) {
+      setRawSubtitleCues([]);
+      setTranslatedSubtitleCues([]);
+      return;
+    }
+
+    const subUrl = activeEpisode.subtitle_url || activeEpisode.direct_subtitle_url || '';
+
+    async function loadEpisodeSubtitles() {
+      try {
+        let cues = [];
+        if (subUrl) {
+          cues = await fetchSubtitle(subUrl);
+        }
+
+        if (mounted && cues.length > 0) {
+          setRawSubtitleCues(cues);
+
+          if (subtitlesEnabled) {
+            setIsTranslatingSubtitles(true);
+            try {
+              const viCues = await translateSubtitle(cues, subUrl, 'vi');
+              if (mounted) {
+                setTranslatedSubtitleCues(viCues);
+              }
+            } catch (tErr) {
+              console.warn('[Watch] Subtitle translation error:', tErr);
+            } finally {
+              if (mounted) {
+                setIsTranslatingSubtitles(false);
+              }
+            }
+          }
+        } else {
+          // If no upstream subtitle file exists, automatically generate intelligent Vietnamese subtitles
+          setIsTranslatingSubtitles(true);
+          try {
+            const autoCues = await autoGenerateSubtitles({
+              title: drama?.title,
+              episodeNumber: currentEpisodeNumber,
+              totalEpisodes,
+              description: drama?.description,
+              duration,
+            });
+            if (mounted && autoCues.length > 0) {
+              setRawSubtitleCues(autoCues);
+              setTranslatedSubtitleCues(autoCues);
+            }
+          } catch (aErr) {
+            console.warn('[Watch] Auto-generate subtitle error:', aErr);
+          } finally {
+            if (mounted) {
+              setIsTranslatingSubtitles(false);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Watch] Subtitle fetch error:', err);
+      }
+    }
+
+    loadEpisodeSubtitles();
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeEpisode?.id, activeEpisode?.subtitle_url, currentEpisodeNumber, subtitlesEnabled, drama?.title]);
+
+
+  // Derived active subtitle cues to display
+  const activeSubCues = useMemo(() => {
+    if (!subtitlesEnabled) return [];
+    if (subtitleLanguage === 'custom' && customSubtitle?.cues?.length) {
+      return customSubtitle.cues;
+    }
+    if (subtitleLanguage === 'vi' && translatedSubtitleCues.length > 0) {
+      return translatedSubtitleCues;
+    }
+    return rawSubtitleCues;
+  }, [subtitlesEnabled, subtitleLanguage, customSubtitle, translatedSubtitleCues, rawSubtitleCues]);
+
   // Format mm:ss or hh:mm:ss
   const formatTime = (secs) => {
     if (isNaN(secs) || secs < 0) return '00:00';
@@ -311,7 +419,11 @@ export function Watch() {
         if (refreshed && refreshed.play_url) {
           streamUrl = refreshed.play_url;
           activeEpisode.play_url = streamUrl;
+          if (refreshed.subtitle_url) {
+            activeEpisode.subtitle_url = refreshed.subtitle_url;
+          }
         }
+
       }
 
       if (!mounted) return;
@@ -664,6 +776,16 @@ export function Watch() {
               className="w-full h-full object-contain bg-black"
             />
 
+            {/* Cinematic Subtitle Overlay */}
+            <SubtitleOverlay
+              cues={activeSubCues}
+              currentTime={currentTime}
+              enabled={subtitlesEnabled}
+              fontSize={subtitleFontSize}
+              offset={subtitleOffset}
+            />
+
+
             {/* Resume Playback Banner */}
             {resumePromptTime > 0 && (
               <div className="absolute top-4 left-4 right-4 z-30 rounded-2xl bg-slate-900/90 border border-rose-500/40 p-3 shadow-xl backdrop-blur-md flex items-center justify-between text-xs text-white animate-fade-in">
@@ -821,6 +943,39 @@ export function Watch() {
               Tập tiếp
             </Button>
 
+            {/* Subtitles (CC) Button */}
+            <Tooltip
+              title={`Phụ đề (CC): ${
+                subtitlesEnabled
+                  ? subtitleLanguage === 'vi'
+                    ? 'Tiếng Việt'
+                    : subtitleLanguage === 'custom'
+                    ? 'Tùy chỉnh'
+                    : 'Bản Gốc'
+                  : 'Đang Tắt'
+              }`}
+            >
+              <button
+                onClick={() => setSubtitlesModalOpen(true)}
+                className={`relative px-2.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer border flex items-center gap-1 ${
+                  subtitlesEnabled
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-sm shadow-rose-500/10'
+                    : 'bg-slate-850 text-slate-400 border-slate-700 hover:text-slate-200'
+                }`}
+              >
+                <span>CC</span>
+                <span className="text-[10px] font-mono opacity-90">
+                  {subtitlesEnabled ? (subtitleLanguage === 'vi' ? 'VI' : subtitleLanguage === 'custom' ? 'FILE' : 'EN') : 'OFF'}
+                </span>
+                {isTranslatingSubtitles && (
+                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  </span>
+                )}
+              </button>
+            </Tooltip>
+
             <Tooltip title="Toàn màn hình">
               <button
                 onClick={handleFullscreen}
@@ -830,6 +985,7 @@ export function Watch() {
               </button>
             </Tooltip>
           </div>
+
 
           {/* Action Row */}
           <div className="w-full max-w-[460px] mt-3 flex items-center justify-between gap-3 p-3 rounded-2xl glass-panel">
@@ -1039,8 +1195,21 @@ export function Watch() {
           </div>
         </div>
       </div>
+
+      {/* Subtitles & Translation Settings Modal */}
+      <SubtitleSettingsModal
+        open={subtitlesModalOpen}
+        onClose={() => setSubtitlesModalOpen(false)}
+        hasOriginalSubtitles={rawSubtitleCues.length > 0}
+        rawCuesCount={rawSubtitleCues.length}
+        translatedCuesCount={translatedSubtitleCues.length}
+        isTranslating={isTranslatingSubtitles}
+        onCustomSubtitleLoaded={(custom) => setCustomSubtitle(custom)}
+        customSubtitleName={customSubtitle?.name}
+      />
     </div>
   );
 }
+
 
 export default Watch;

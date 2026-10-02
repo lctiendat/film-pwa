@@ -16,12 +16,19 @@ export function ProviderSelector({ providers = [], activeProvider = 'anyreel', o
   const popularKeys = ['anyreel', 'reelshort', 'dramabox', 'shortmax', 'flextv', 'goodshort', 'kalostv', 'vigloo'];
   const popularProviders = providers.filter((p) => popularKeys.includes(p.key.toLowerCase()));
 
+  // Dynamic pill bar: if activeProvider is set and not 'all', ensure it's visible in the quick pills!
+  const activeObj = providers.find((p) => p.key.toLowerCase() === (activeProvider || '').toLowerCase());
+  const displayPills = [...popularProviders];
+  if (activeObj && !displayPills.some((p) => p.key.toLowerCase() === activeObj.key.toLowerCase())) {
+    displayPills.unshift(activeObj);
+  }
+
   const handleSelect = (key) => {
     onSelect(key);
     setModalOpen(false);
   };
 
-  const activeLabel = providers.find((p) => p.key === activeProvider)?.label || activeProvider;
+  const activeLabel = activeObj?.label || (activeProvider === 'all' ? 'Tất cả' : activeProvider);
 
   return (
     <div className="mb-6">
@@ -30,7 +37,8 @@ export function ProviderSelector({ providers = [], activeProvider = 'anyreel', o
           <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">
             Nhà cung cấp:
           </span>
-          <span className="text-sm font-semibold text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-lg border border-rose-500/20">
+          <span className="text-sm font-semibold text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-lg border border-rose-500/20 flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
             {activeLabel}
           </span>
         </div>
@@ -48,25 +56,28 @@ export function ProviderSelector({ providers = [], activeProvider = 'anyreel', o
       {/* Quick horizontal scroll pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
         <button
-          onClick={() => handleSelect('')}
-          className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
-            !activeProvider
-              ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+          type="button"
+          onClick={() => handleSelect('all')}
+          className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+            activeProvider === 'all'
+              ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 ring-2 ring-rose-500/50'
               : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800'
           }`}
         >
+          {activeProvider === 'all' && <CheckOutlined className="text-[10px] mr-1" />}
           Tất cả
         </button>
 
-        {popularProviders.map((prov) => {
-          const isActive = prov.key === activeProvider;
+        {displayPills.map((prov) => {
+          const isActive = prov.key.toLowerCase() === (activeProvider || '').toLowerCase();
           return (
             <button
               key={prov.key}
+              type="button"
               onClick={() => handleSelect(prov.key)}
-              className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 ${
+              className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
                 isActive
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 ring-2 ring-rose-500/50 font-semibold'
                   : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800'
               }`}
             >
@@ -77,10 +88,11 @@ export function ProviderSelector({ providers = [], activeProvider = 'anyreel', o
         })}
 
         <button
+          type="button"
           onClick={() => setModalOpen(true)}
-          className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800/60 text-slate-400 hover:text-white border border-dashed border-slate-700 hover:border-slate-500"
+          className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800/60 text-slate-400 hover:text-white border border-dashed border-slate-700 hover:border-slate-500 cursor-pointer"
         >
-          + Thêm ({providers.length - popularProviders.length})
+          + Thêm ({Math.max(0, providers.length - displayPills.length)})
         </button>
       </div>
 

@@ -10,8 +10,10 @@ import {
   searchDramas,
   resolveDrama,
   refreshEpisodeStream,
+  proxySubtitle,
 } from './server/dramaCrawler.js'
-import { translateText, translateBatch } from './server/translateService.js'
+import { translateText, translateBatch, translateSubtitleCues, generateAutoCaptions } from './server/translateService.js'
+
 
 // Full Vite middleware plugin implementing all DramaFlow PRO crawl & streaming API endpoints
 function dramaCrawlerServerPlugin() {
@@ -164,6 +166,89 @@ function dramaCrawlerServerPlugin() {
           } catch (e) {
             res.statusCode = 500;
             res.end('Error proxying asset');
+          }
+          return;
+        }
+
+        // 9. Subtitle Proxy (VTT / SRT)
+        if (pathname === '/api/subtitle') {
+          try {
+            const subUrl = urlObj.searchParams.get('url');
+            if (!subUrl) {
+              res.statusCode = 400;
+              res.end('Missing url parameter');
+              return;
+            }
+            const data = await proxySubtitle(subUrl);
+            if (!data.ok) {
+              res.statusCode = data.status || 500;
+              res.end(data.error || 'Failed to fetch subtitle');
+              return;
+            }
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Content-Type', data.contentType || 'text/vtt; charset=utf-8');
+            res.end(data.content);
+          } catch (e) {
+            res.statusCode = 500;
+            res.end(e.message);
+          }
+          return;
+        }
+
+        // 9b. Subtitle Translate (Preserving cue timings)
+        if (pathname === '/api/subtitle/translate') {
+          try {
+            if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const json = JSON.parse(body || '{}');
+                  const cues = json.cues || [];
+                  const to = json.to || 'vi';
+                  const translatedCues = await translateSubtitleCues(cues, to);
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ ok: true, cues: translatedCues }));
+                } catch (pe) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ ok: false, error: pe.message }));
+                }
+              });
+              return;
+            }
+          } catch (e) {
+            res.statusCode = 500;
+            res.end(e.message);
+          }
+          return;
+        }
+
+        // 9c. Subtitle Auto-Generate (AI Narrative & Dialogue Subtitles)
+        if (pathname === '/api/subtitle/auto-generate') {
+          try {
+            if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const json = JSON.parse(body || '{}');
+                  const cues = await generateAutoCaptions(json);
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ ok: true, cues }));
+                } catch (pe) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ ok: false, error: pe.message }));
+                }
+              });
+              return;
+            }
+          } catch (e) {
+            res.statusCode = 500;
+            res.end(e.message);
           }
           return;
         }

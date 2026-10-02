@@ -69,28 +69,33 @@ export function normalizeItem(item) {
 // 2. Sections Fetcher with Resilient Multilingual Fallback Chain
 export async function fetchSections(provider = 'anyreel', page = 1, query = '', lang = 'vi-VN') {
   async function fetchSectionsFromUpstream(targetLang, useTargetFilter = true) {
-    const params = new URLSearchParams();
-    params.set('provider', provider);
-    if (targetLang && targetLang !== 'all') {
-      params.set('lang', targetLang);
-      if (useTargetFilter) {
-        params.set('target_lang', targetLang);
+    try {
+      const params = new URLSearchParams();
+      params.set('provider', provider);
+      if (targetLang && targetLang !== 'all') {
+        params.set('lang', targetLang);
+        if (useTargetFilter) {
+          params.set('target_lang', targetLang);
+        }
       }
-    }
-    if (query) {
-      params.set('q', query);
-    } else if (page > 1) {
-      const commonTabs = ['home', 'list', 'all', 'all-series', 'for-you', 'feed-stream', 'popular', 'trending', 'latest', 'rank', 'new', 'foryou', 'free', 'new-releases'];
-      commonTabs.forEach(t => params.set(`tab_pages[${t}]`, String(page)));
-    }
+      if (query) {
+        params.set('q', query);
+      } else if (page > 1) {
+        const commonTabs = ['home', 'list', 'all', 'all-series', 'for-you', 'feed-stream', 'popular', 'trending', 'latest', 'rank', 'new', 'foryou', 'free', 'new-releases'];
+        commonTabs.forEach(t => params.set(`tab_pages[${t}]`, String(page)));
+      }
 
-    const url = `${BASE_URL}/home/providers/sections?${params.toString()}`;
-    const response = await fetch(url, {
-      headers: getHeaders({ 'X-Requested-With': 'XMLHttpRequest' })
-    });
+      const url = `${BASE_URL}/home/providers/sections?${params.toString()}`;
+      const response = await fetch(url, {
+        headers: getHeaders({ 'X-Requested-With': 'XMLHttpRequest' }),
+        signal: AbortSignal.timeout(9000),
+      });
 
-    if (!response.ok) return null;
-    return await response.json();
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (err) {
+      return null;
+    }
   }
 
   // Primary fetch with selected language
@@ -112,18 +117,18 @@ export async function fetchSections(provider = 'anyreel', page = 1, query = '', 
     }
   }
 
-  // Fallback 2: If still 0 items, fallback to Vietnamese (vi-VN)
-  if (totalItems === 0 && !query && lang !== 'vi-VN') {
-    const fb2 = await fetchSectionsFromUpstream('vi-VN', false);
+  // Fallback 2: If still 0 items, fallback to Indonesian (id-ID, upstream native store)
+  if (totalItems === 0 && !query && lang !== 'id-ID') {
+    const fb2 = await fetchSectionsFromUpstream('id-ID', false);
     if (countItems(fb2) > 0) {
       data = fb2;
       totalItems = countItems(data);
     }
   }
 
-  // Fallback 3: If still 0 items, fallback to default store 'id-ID'
-  if (totalItems === 0 && !query && lang !== 'id-ID') {
-    const fb3 = await fetchSectionsFromUpstream('id-ID', false);
+  // Fallback 3: If still 0 items, fallback to English (en-US)
+  if (totalItems === 0 && !query && lang !== 'en-US') {
+    const fb3 = await fetchSectionsFromUpstream('en-US', false);
     if (countItems(fb3) > 0) {
       data = fb3;
       totalItems = countItems(data);
@@ -131,8 +136,11 @@ export async function fetchSections(provider = 'anyreel', page = 1, query = '', 
   }
 
   if (!data) {
-    return { ok: false, error: 'Failed to fetch sections from upstream' };
+    return { ok: false, active_provider: provider, error: 'Failed to fetch sections from upstream' };
   }
+
+  // Guarantee active_provider matches the requested provider
+  data.active_provider = provider;
 
   if (Array.isArray(data.providers) && data.providers.length > 0) {
     cachedProviders = data.providers;
@@ -356,6 +364,15 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
     const epNum = item.route_episode_number || item.number || idx + 1;
     const playUrl = item.play_url || item.direct_play_url || '';
     const epWatchUrl = item.watch_url || (dramaSlug ? `${BASE_URL}/detail/watch/${dramaSlug}/${epNum}?lang=${encodeURIComponent(lang)}&from=home` : '');
+    let subUrl = item.subtitle_url || item.direct_subtitle_url || '';
+    if (subUrl && subUrl.startsWith('/')) {
+      subUrl = `${BASE_URL}${subUrl}`;
+    }
+    const multiSubs = Array.isArray(item.multi_subtitles) ? item.multi_subtitles.map(s => ({
+      ...s,
+      subtitle_url: s.subtitle_url && s.subtitle_url.startsWith('/') ? `${BASE_URL}${s.subtitle_url}` : (s.subtitle_url || '')
+    })) : [];
+
     return {
       id: item.id || idx + 1,
       number: epNum,
@@ -365,11 +382,13 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
       direct_play_url: item.direct_play_url || '',
       watch_url: epWatchUrl,
       thumb_url: item.thumb_url || poster,
-      subtitle_url: item.subtitle_url || '',
+      subtitle_url: subUrl,
+      multi_subtitles: multiSubs,
       is_playable: !!(playUrl || item.direct_play_url),
       is_hls: playUrl.includes('.m3u8') || item.browser_prefetch_mode === 'hls'
     };
   });
+
 
   const isOk = cleanEpisodes.length > 0 && cleanEpisodes.some(e => e.play_url || e.direct_play_url);
 
@@ -444,11 +463,22 @@ export async function refreshEpisodeStream({ watch_url, slug, ep = '1', lang = '
 
   if (streamData && (streamData.play_url || streamData.direct_play_url)) {
     const playUrl = streamData.play_url || streamData.direct_play_url;
+    let subUrl = streamData.subtitle_url || streamData.direct_subtitle_url || '';
+    if (subUrl && subUrl.startsWith('/')) {
+      subUrl = `${BASE_URL}${subUrl}`;
+    }
+    const multiSubs = Array.isArray(streamData.multi_subtitles) ? streamData.multi_subtitles.map(s => ({
+      ...s,
+      subtitle_url: s.subtitle_url && s.subtitle_url.startsWith('/') ? `${BASE_URL}${s.subtitle_url}` : (s.subtitle_url || '')
+    })) : [];
+
     return {
       ok: true,
       episode_number: epNum,
       play_url: playUrl,
       direct_play_url: streamData.direct_play_url || '',
+      subtitle_url: subUrl,
+      multi_subtitles: multiSubs,
       is_hls: playUrl.includes('.m3u8') || streamData.direct_play_is_hls === true,
       source_refreshed: streamData.source_refreshed === true
     };
@@ -466,11 +496,22 @@ export async function refreshEpisodeStream({ watch_url, slug, ep = '1', lang = '
         const matched = rawList.find(e => e.number === epNum || e.route_episode_number === epNum);
         if (matched && (matched.play_url || matched.direct_play_url)) {
           const pUrl = matched.play_url || matched.direct_play_url;
+          let subUrl = matched.subtitle_url || matched.direct_subtitle_url || '';
+          if (subUrl && subUrl.startsWith('/')) {
+            subUrl = `${BASE_URL}${subUrl}`;
+          }
+          const multiSubs = Array.isArray(matched.multi_subtitles) ? matched.multi_subtitles.map(s => ({
+            ...s,
+            subtitle_url: s.subtitle_url && s.subtitle_url.startsWith('/') ? `${BASE_URL}${s.subtitle_url}` : (s.subtitle_url || '')
+          })) : [];
+
           return {
             ok: true,
             episode_number: epNum,
             play_url: pUrl,
             direct_play_url: matched.direct_play_url || '',
+            subtitle_url: subUrl,
+            multi_subtitles: multiSubs,
             is_hls: pUrl.includes('.m3u8') || matched.browser_prefetch_mode === 'hls'
           };
         }
@@ -482,3 +523,28 @@ export async function refreshEpisodeStream({ watch_url, slug, ep = '1', lang = '
 
   return { ok: false, error: `Could not resolve stream for episode ${epNum}` };
 }
+
+// 6. Subtitle Proxy (Pass through upstream VTT/SRT with CORS headers)
+export async function proxySubtitle(targetUrl) {
+  if (!targetUrl) return { ok: false, error: 'Subtitle URL is required' };
+  let url = targetUrl;
+  if (url.startsWith('/')) {
+    url = `${BASE_URL}${url}`;
+  }
+  try {
+    const headers = getHeaders();
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      return { ok: false, status: res.status };
+    }
+    const content = await res.text();
+    return {
+      ok: true,
+      content,
+      contentType: res.headers.get('content-type') || 'text/vtt; charset=utf-8'
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+

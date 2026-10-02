@@ -9,6 +9,10 @@ export const useDramaStore = create((set, get) => ({
   favoritesCount: 0,
   historyCount: 0,
   autoTranslate: typeof window !== 'undefined' ? localStorage.getItem('df_auto_translate') !== 'false' : true,
+  subtitlesEnabled: typeof window !== 'undefined' ? localStorage.getItem('df_sub_enabled') !== 'false' : true,
+  subtitleLanguage: typeof window !== 'undefined' ? (localStorage.getItem('df_sub_lang') || 'vi') : 'vi',
+  subtitleFontSize: typeof window !== 'undefined' ? (localStorage.getItem('df_sub_size') || 'md') : 'md',
+  subtitleOffset: 0.0,
 
   setSelectedProvider: (provider) => set({ selectedProvider: provider, selectedTab: '' }),
   setSelectedTab: (tab) => set({ selectedTab: tab }),
@@ -20,6 +24,26 @@ export const useDramaStore = create((set, get) => ({
     }
     set({ autoTranslate: val });
   },
+  setSubtitlesEnabled: (val) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('df_sub_enabled', String(val));
+    }
+    set({ subtitlesEnabled: val });
+  },
+  setSubtitleLanguage: (lang) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('df_sub_lang', lang);
+    }
+    set({ subtitleLanguage: lang });
+  },
+  setSubtitleFontSize: (size) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('df_sub_size', size);
+    }
+    set({ subtitleFontSize: size });
+  },
+  setSubtitleOffset: (offset) => set({ subtitleOffset: offset }),
+
 
   refreshCounts: async () => {
     try {
