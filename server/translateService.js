@@ -1,26 +1,298 @@
-// Translate Service - High-quality multilingual translation engine with caching & chunking
-// Powered by MyMemory & NLP Language Detection
+// Translate Service - High-performance multilingual translation engine
+// Pipeline: Google Translate → MyMemory → LibreTranslate
+// Features: Endpoint rotation, concurrency limiter, batch chunking, LRU cache
 
+// ═══════════════════════════════════════════════════════════════════
+// LRU Cache (max 5000 entries to prevent memory leaks)
+// ═══════════════════════════════════════════════════════════════════
+const MAX_CACHE_SIZE = 5000;
 const translationCache = new Map();
 
-/**
- * Detect source language from text patterns
- */
+function cacheGet(key) {
+  if (!translationCache.has(key)) return undefined;
+  const value = translationCache.get(key);
+  // Move to end (most recently used)
+  translationCache.delete(key);
+  translationCache.set(key, value);
+  return value;
+}
+
+function cacheSet(key, value) {
+  if (translationCache.has(key)) {
+    translationCache.delete(key);
+  } else if (translationCache.size >= MAX_CACHE_SIZE) {
+    // Evict oldest (first) entry
+    const firstKey = translationCache.keys().next().value;
+    translationCache.delete(firstKey);
+  }
+  translationCache.set(key, value);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Concurrency Limiter (max 8 simultaneous requests)
+// ═══════════════════════════════════════════════════════════════════
+const MAX_CONCURRENT = 8;
+let activeRequests = 0;
+const requestQueue = [];
+
+function acquireSlot() {
+  return new Promise((resolve) => {
+    if (activeRequests < MAX_CONCURRENT) {
+      activeRequests++;
+      resolve();
+    } else {
+      requestQueue.push(resolve);
+    }
+  });
+}
+
+function releaseSlot() {
+  activeRequests--;
+  if (requestQueue.length > 0) {
+    activeRequests++;
+    const next = requestQueue.shift();
+    next();
+  }
+}
+
+async function withThrottle(fn) {
+  await acquireSlot();
+  try {
+    return await fn();
+  } finally {
+    releaseSlot();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Google Translate Endpoints (rotation on 429/503/HTML/parse failure)
+// ═══════════════════════════════════════════════════════════════════
+const GOOGLE_ENDPOINTS = [
+  {
+    name: 'dict-chrome-ex',
+    buildUrl: (text, sl, tl) =>
+      `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${sl}&tl=${tl}&q=${encodeURIComponent(text)}`,
+  },
+  {
+    name: 'translate.google.com-dict',
+    buildUrl: (text, sl, tl) =>
+      `https://translate.google.com/translate_a/t?client=dict-chrome-ex&sl=${sl}&tl=${tl}&q=${encodeURIComponent(text)}`,
+  },
+  {
+    name: 'client-at',
+    buildUrl: (text, sl, tl) =>
+      `https://translate.google.com/translate_a/single?client=at&dt=t&dt=rm&sl=${sl}&tl=${tl}&q=${encodeURIComponent(text)}`,
+  },
+  {
+    name: 'client-webapp',
+    buildUrl: (text, sl, tl) =>
+      `https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&sl=${sl}&tl=${tl}&q=${encodeURIComponent(text)}`,
+  },
+];
+
+let googleEndpointIndex = 0;
+
+function rotateGoogleEndpoint() {
+  googleEndpointIndex = (googleEndpointIndex + 1) % GOOGLE_ENDPOINTS.length;
+}
+
+function parseGoogleResponse(data, endpointName) {
+  // dict-chrome-ex returns: ["translated text"] or [["translated text"]]
+  if (endpointName.includes('dict')) {
+    if (Array.isArray(data)) {
+      if (typeof data[0] === 'string') return data[0];
+      if (Array.isArray(data[0]) && typeof data[0][0] === 'string') return data[0][0];
+    }
+    if (typeof data === 'string') return data;
+  }
+
+  // client=at / client=gtx returns: [[["translated","original",null,null,X],...]]
+  if (Array.isArray(data) && Array.isArray(data[0])) {
+    const sentences = data[0];
+    if (Array.isArray(sentences)) {
+      const parts = [];
+      for (const seg of sentences) {
+        if (Array.isArray(seg) && typeof seg[0] === 'string') {
+          parts.push(seg[0]);
+        }
+      }
+      if (parts.length > 0) return parts.join('');
+    }
+  }
+
+  return null;
+}
+
+async function tryGoogleTranslate(text, sourceLang, targetLang) {
+  const startIdx = googleEndpointIndex;
+  let attempts = 0;
+
+  while (attempts < GOOGLE_ENDPOINTS.length) {
+    const endpoint = GOOGLE_ENDPOINTS[googleEndpointIndex];
+    const url = endpoint.buildUrl(text, sourceLang, targetLang);
+
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json, */*',
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+
+      if (res.status === 429 || res.status === 503) {
+        console.warn(`[Translate] Google ${endpoint.name} returned ${res.status}, rotating...`);
+        rotateGoogleEndpoint();
+        attempts++;
+        continue;
+      }
+
+      if (!res.ok) {
+        rotateGoogleEndpoint();
+        attempts++;
+        continue;
+      }
+
+      const contentType = res.headers.get('content-type') || '';
+      const bodyText = await res.text();
+
+      // Reject HTML responses
+      if (contentType.includes('text/html') || bodyText.trimStart().startsWith('<!') || bodyText.trimStart().startsWith('<html')) {
+        console.warn(`[Translate] Google ${endpoint.name} returned HTML, rotating...`);
+        rotateGoogleEndpoint();
+        attempts++;
+        continue;
+      }
+
+      // Try parsing JSON
+      let data;
+      try {
+        data = JSON.parse(bodyText);
+      } catch {
+        console.warn(`[Translate] Google ${endpoint.name} JSON parse failed, rotating...`);
+        rotateGoogleEndpoint();
+        attempts++;
+        continue;
+      }
+
+      const translated = parseGoogleResponse(data, endpoint.name);
+      if (translated && translated.trim() && translated.trim().toLowerCase() !== text.trim().toLowerCase()) {
+        return translated;
+      }
+
+      // Same text returned → try next endpoint
+      rotateGoogleEndpoint();
+      attempts++;
+    } catch (err) {
+      console.warn(`[Translate] Google ${endpoint.name} error: ${err.message}`);
+      rotateGoogleEndpoint();
+      attempts++;
+    }
+  }
+
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MyMemory Fallback (max 500 chars)
+// ═══════════════════════════════════════════════════════════════════
+async function tryMyMemoryTranslate(text, sourceLang, targetLang) {
+  // MyMemory has a 500 character limit
+  const input = text.length > 490 ? text.slice(0, 490) : text;
+
+  try {
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(input)}&langpair=${sourceLang}|${targetLang}`;
+    const res = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (data?.responseStatus !== 200) return null;
+
+    const translated = data?.responseData?.translatedText;
+    if (!translated) return null;
+    if (translated.includes('IS AN INVALID SOURCE LANGUAGE')) return null;
+
+    // Reject if it returns the original text unchanged
+    if (translated.trim().toLowerCase() === input.trim().toLowerCase()) return null;
+
+    return translated;
+  } catch (err) {
+    console.warn('[Translate] MyMemory error:', err.message);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LibreTranslate Fallback (public instances)
+// ═══════════════════════════════════════════════════════════════════
+const LIBRE_INSTANCES = [
+  'https://libretranslate.de',
+  'https://translate.argosopentech.com',
+];
+
+async function tryLibreTranslate(text, sourceLang, targetLang) {
+  for (const instance of LIBRE_INSTANCES) {
+    try {
+      const res = await fetch(`${instance}/translate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          q: text,
+          source: sourceLang,
+          target: targetLang,
+          format: 'text',
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      const translated = data?.translatedText;
+      if (!translated) continue;
+
+      // Reject if it returns the original text unchanged
+      if (translated.trim().toLowerCase() === text.trim().toLowerCase()) continue;
+
+      return translated;
+    } catch (err) {
+      console.warn(`[Translate] LibreTranslate ${instance} error:`, err.message);
+    }
+  }
+
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Language Detection
+// ═══════════════════════════════════════════════════════════════════
 export function detectLanguage(text) {
   if (!text || typeof text !== 'string') return 'en';
-  // Check for Chinese / Japanese / Korean
+
+  // Chinese / Japanese / Korean
   if (/[\u4e00-\u9fa5]/.test(text)) return 'zh';
   if (/[\u3040-\u30ff]/.test(text)) return 'ja';
   if (/[\uac00-\ud7af]/.test(text)) return 'ko';
 
-  // Check for common Indonesian / Malay words
   const lower = text.toLowerCase();
-  const idWords = ['yang', 'dan', 'di', 'dari', 'ini', 'itu', 'dengan', 'untuk', 'adalah', 'episode', 'terbaru', 'drama', 'mereka', 'akan'];
   const words = lower.split(/\s+/);
+
+  // Indonesian / Malay
+  const idWords = ['yang', 'dan', 'di', 'dari', 'ini', 'itu', 'dengan', 'untuk', 'adalah', 'episode', 'terbaru', 'drama', 'mereka', 'akan'];
   const idMatchCount = idWords.filter(w => words.includes(w)).length;
   if (idMatchCount >= 2) return 'id';
 
-  // Check for common Vietnamese words
+  // Vietnamese
   const viWords = ['và', 'của', 'là', 'trong', 'những', 'được', 'người', 'phim', 'tập', 'với'];
   const viMatchCount = viWords.filter(w => words.includes(w)).length;
   if (viMatchCount >= 2) return 'vi';
@@ -28,42 +300,46 @@ export function detectLanguage(text) {
   return 'en';
 }
 
-/**
- * Translate a single chunk (< 450 chars)
- */
-async function translateChunk(chunk, fromLang, toLang) {
-  const cacheKey = `${fromLang}_${toLang}_${chunk.trim()}`;
-  if (translationCache.has(cacheKey)) {
-    return translationCache.get(cacheKey);
+// ═══════════════════════════════════════════════════════════════════
+// Core Translation Pipeline: Google → MyMemory → LibreTranslate
+// ═══════════════════════════════════════════════════════════════════
+async function translateSingle(text, sourceLang, targetLang) {
+  const cleanInput = text.trim();
+  if (!cleanInput) return '';
+
+  const cacheKey = `${sourceLang}_${targetLang}_${cleanInput}`;
+  const cached = cacheGet(cacheKey);
+  if (cached !== undefined) return cached;
+
+  // 1. Google Translate (fastest, primary)
+  const googleResult = await tryGoogleTranslate(cleanInput, sourceLang, targetLang);
+  if (googleResult) {
+    cacheSet(cacheKey, googleResult);
+    return googleResult;
   }
 
-  try {
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk.trim())}&langpair=${fromLang}|${toLang}`;
-    const res = await fetch(url, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      const translated = data?.responseData?.translatedText;
-      if (translated && !translated.includes('IS AN INVALID SOURCE LANGUAGE')) {
-        translationCache.set(cacheKey, translated);
-        return translated;
-      }
-    }
-  } catch (err) {
-    console.warn('[Translate] Error translating chunk:', err.message);
+  // 2. MyMemory (fallback)
+  const myMemoryResult = await tryMyMemoryTranslate(cleanInput, sourceLang, targetLang);
+  if (myMemoryResult) {
+    cacheSet(cacheKey, myMemoryResult);
+    return myMemoryResult;
   }
 
-  return chunk;
+  // 3. LibreTranslate (last resort)
+  const libreResult = await tryLibreTranslate(cleanInput, sourceLang, targetLang);
+  if (libreResult) {
+    cacheSet(cacheKey, libreResult);
+    return libreResult;
+  }
+
+  // All failed → return original
+  console.warn(`[Translate] All providers failed for: "${cleanInput.slice(0, 60)}..."`);
+  return cleanInput;
 }
 
-/**
- * Translate arbitrary text with automatic chunking and sentence boundary detection
- */
+// ═══════════════════════════════════════════════════════════════════
+// Public API: translateText (with auto-chunking for long texts)
+// ═══════════════════════════════════════════════════════════════════
 export async function translateText(text, targetLang = 'vi', sourceLang = null) {
   if (!text || typeof text !== 'string' || !text.trim()) {
     return '';
@@ -74,31 +350,69 @@ export async function translateText(text, targetLang = 'vi', sourceLang = null) 
     return text;
   }
 
-  // Split into sentence chunks to preserve context and avoid character limits
+  // For short texts, translate directly with throttle
+  if (text.length < 500) {
+    return withThrottle(() => translateSingle(text, detected, targetLang));
+  }
+
+  // For long texts, split into sentence chunks
   const chunks = text.match(/[^.!?\n]+(?:[.!?\n]+|$)/g) || [text];
 
   const translatedChunks = await Promise.all(
     chunks.map(chunk => {
       const trimmed = chunk.trim();
-      if (!trimmed) return '';
-      return translateChunk(trimmed, detected, targetLang);
+      if (!trimmed) return Promise.resolve('');
+      return withThrottle(() => translateSingle(trimmed, detected, targetLang));
     })
   );
 
   return translatedChunks.filter(Boolean).join(' ');
 }
 
-/**
- * Batch translation helper
- */
-export async function translateBatch(items, targetLang = 'vi') {
-  if (!Array.isArray(items)) return [];
-  return Promise.all(items.map(t => translateText(t, targetLang)));
+// ═══════════════════════════════════════════════════════════════════
+// Batch Translation (chunks of 20 sentences, 80ms delay between)
+// ═══════════════════════════════════════════════════════════════════
+const BATCH_CHUNK_SIZE = 20;
+const BATCH_DELAY_MS = 80;
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Translate subtitle cues preserving timing
- */
+export async function translateBatch(items, targetLang = 'vi') {
+  if (!Array.isArray(items)) return [];
+  if (items.length === 0) return [];
+
+  const results = new Array(items.length);
+
+  // Split into chunks of BATCH_CHUNK_SIZE
+  for (let i = 0; i < items.length; i += BATCH_CHUNK_SIZE) {
+    const chunkEnd = Math.min(i + BATCH_CHUNK_SIZE, items.length);
+    const chunkPromises = [];
+
+    for (let j = i; j < chunkEnd; j++) {
+      const idx = j;
+      chunkPromises.push(
+        translateText(items[idx], targetLang).then(result => {
+          results[idx] = result;
+        })
+      );
+    }
+
+    await Promise.all(chunkPromises);
+
+    // Delay between chunks to avoid burst
+    if (chunkEnd < items.length) {
+      await sleep(BATCH_DELAY_MS);
+    }
+  }
+
+  return results;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Subtitle Translation (preserves cue timings)
+// ═══════════════════════════════════════════════════════════════════
 export async function translateSubtitleCues(cues, targetLang = 'vi') {
   if (!Array.isArray(cues) || cues.length === 0) return [];
   const texts = cues.map(c => c.text || '');
@@ -110,9 +424,9 @@ export async function translateSubtitleCues(cues, targetLang = 'vi') {
   }));
 }
 
-/**
- * Auto-generate intelligent timed Vietnamese subtitles when upstream has no VTT file
- */
+// ═══════════════════════════════════════════════════════════════════
+// Auto-Generate Captions (unchanged from original)
+// ═══════════════════════════════════════════════════════════════════
 export async function generateAutoCaptions({ title, episodeNumber = 1, totalEpisodes = 45, description = '', duration = 90 }) {
   const ep = parseInt(episodeNumber || 1, 10);
   const total = parseInt(totalEpisodes || 45, 10);
@@ -210,5 +524,3 @@ export async function generateAutoCaptions({ title, episodeNumber = 1, totalEpis
     };
   });
 }
-
-

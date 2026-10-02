@@ -128,13 +128,14 @@ export async function fetchDramaDetail({ watch_url, slug, ep = 1, lang = 'vi-VN'
 /**
  * On-Demand Episode Stream Resolver (Tier 1 Edge, Tier 2 Origin, Tier 3 HTML)
  */
-export async function refreshEpisodeStream({ watch_url, slug, ep = 1, lang = 'vi-VN' }) {
+export async function refreshEpisodeStream({ watch_url, slug, ep = 1, lang = 'vi-VN', rs_ctx = '' }) {
   try {
     const query = new URLSearchParams({
       watch_url: watch_url || '',
       slug: slug || '',
       ep: String(ep || 1),
       lang: lang || 'vi-VN',
+      rs_ctx: rs_ctx || '',
     }).toString();
 
     const res = await apiClient.get(`/api/episode/refresh?${query}`);

@@ -104,7 +104,8 @@ function dramaCrawlerServerPlugin() {
             const slug = urlObj.searchParams.get('slug') || '';
             const ep = urlObj.searchParams.get('ep') || '1';
             const lang = urlObj.searchParams.get('lang') || 'vi-VN';
-            const data = await refreshEpisodeStream({ watch_url, slug, ep, lang });
+            const rs_ctx = urlObj.searchParams.get('rs_ctx') || '';
+            const data = await refreshEpisodeStream({ watch_url, slug, ep, lang, rs_ctx });
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify(data));
           } catch (e) {

@@ -32,9 +32,6 @@ import {
   searchDramas,
   translateContent,
 } from '../services/api';
-import { fetchSubtitle, translateSubtitle, autoGenerateSubtitles } from '../services/subtitleService';
-import { SubtitleOverlay } from '../components/SubtitleOverlay';
-import { SubtitleSettingsModal } from '../components/SubtitleSettingsModal';
 import { isFavorite, saveFavorite, removeFavorite, saveHistory, getSectionsCache, getDB } from '../services/db';
 import { useDramaStore } from '../store/useDramaStore';
 import { FALLBACK_DATA } from '../services/fallbackData';
@@ -49,14 +46,6 @@ export function Watch() {
     refreshCounts,
     autoTranslate,
     setAutoTranslate,
-    subtitlesEnabled,
-    setSubtitlesEnabled,
-    subtitleLanguage,
-    setSubtitleLanguage,
-    subtitleFontSize,
-    setSubtitleFontSize,
-    subtitleOffset,
-    setSubtitleOffset,
   } = useDramaStore();
 
   const [drama, setDrama] = useState(location.state?.drama || null);
@@ -79,12 +68,6 @@ export function Watch() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
-  // Subtitle (CC) state
-  const [rawSubtitleCues, setRawSubtitleCues] = useState([]);
-  const [translatedSubtitleCues, setTranslatedSubtitleCues] = useState([]);
-  const [customSubtitle, setCustomSubtitle] = useState(null);
-  const [isTranslatingSubtitles, setIsTranslatingSubtitles] = useState(false);
-  const [subtitlesModalOpen, setSubtitlesModalOpen] = useState(false);
 
 
   // Mode: 'single' (từng tập) vs 'full_movie' (ghép tất cả tập vào 1 tập liên tục)
@@ -235,6 +218,7 @@ export function Watch() {
                 ...prev,
                 ...detail,
                 slug: detail.slug || prev?.slug,
+                rs_ctx: detail.rs_ctx || prev?.rs_ctx || '',
                 description: detail.description || prev?.description,
                 title: detail.title || prev?.title,
                 poster_url: detail.poster || prev?.poster_url,
@@ -338,89 +322,6 @@ export function Watch() {
   const estTotalSeconds = totalEpisodes * estEpisodeSeconds;
   const currentTotalSeconds = currentEpisodeIndex * estEpisodeSeconds + currentTime;
 
-  // 1c. Subtitle Loading & Real-time Vietnamese Translation Effect
-  useEffect(() => {
-    let mounted = true;
-    if (!activeEpisode) {
-      setRawSubtitleCues([]);
-      setTranslatedSubtitleCues([]);
-      return;
-    }
-
-    const subUrl = activeEpisode.subtitle_url || activeEpisode.direct_subtitle_url || '';
-
-    async function loadEpisodeSubtitles() {
-      try {
-        let cues = [];
-        if (subUrl) {
-          cues = await fetchSubtitle(subUrl);
-        }
-
-        if (mounted && cues.length > 0) {
-          setRawSubtitleCues(cues);
-
-          if (subtitlesEnabled) {
-            setIsTranslatingSubtitles(true);
-            try {
-              const viCues = await translateSubtitle(cues, subUrl, 'vi');
-              if (mounted) {
-                setTranslatedSubtitleCues(viCues);
-              }
-            } catch (tErr) {
-              console.warn('[Watch] Subtitle translation error:', tErr);
-            } finally {
-              if (mounted) {
-                setIsTranslatingSubtitles(false);
-              }
-            }
-          }
-        } else {
-          // If no upstream subtitle file exists, automatically generate intelligent Vietnamese subtitles
-          setIsTranslatingSubtitles(true);
-          try {
-            const autoCues = await autoGenerateSubtitles({
-              title: drama?.title,
-              episodeNumber: currentEpisodeNumber,
-              totalEpisodes,
-              description: drama?.description,
-              duration,
-            });
-            if (mounted && autoCues.length > 0) {
-              setRawSubtitleCues(autoCues);
-              setTranslatedSubtitleCues(autoCues);
-            }
-          } catch (aErr) {
-            console.warn('[Watch] Auto-generate subtitle error:', aErr);
-          } finally {
-            if (mounted) {
-              setIsTranslatingSubtitles(false);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[Watch] Subtitle fetch error:', err);
-      }
-    }
-
-    loadEpisodeSubtitles();
-
-    return () => {
-      mounted = false;
-    };
-  }, [activeEpisode?.id, activeEpisode?.subtitle_url, currentEpisodeNumber, subtitlesEnabled, drama?.title]);
-
-
-  // Derived active subtitle cues to display
-  const activeSubCues = useMemo(() => {
-    if (!subtitlesEnabled) return [];
-    if (subtitleLanguage === 'custom' && customSubtitle?.cues?.length) {
-      return customSubtitle.cues;
-    }
-    if (subtitleLanguage === 'vi' && translatedSubtitleCues.length > 0) {
-      return translatedSubtitleCues;
-    }
-    return rawSubtitleCues;
-  }, [subtitlesEnabled, subtitleLanguage, customSubtitle, translatedSubtitleCues, rawSubtitleCues]);
 
   // Format mm:ss or hh:mm:ss
   const formatTime = (secs) => {
@@ -445,6 +346,7 @@ export function Watch() {
           watch_url: nextEp.watch_url,
           slug: drama?.slug,
           ep: nextEp.number || nextIndex + 1,
+          rs_ctx: nextEp.rs_ctx || drama?.rs_ctx || '',
         });
         if (refreshed && refreshed.play_url) {
           nextEp.play_url = refreshed.play_url;
@@ -477,6 +379,7 @@ export function Watch() {
           watch_url: activeEpisode.watch_url,
           slug: drama?.slug,
           ep: currentEpisodeNumber,
+          rs_ctx: activeEpisode.rs_ctx || drama?.rs_ctx || '',
         });
         if (refreshed && refreshed.play_url) {
           streamUrl = refreshed.play_url;
@@ -485,14 +388,13 @@ export function Watch() {
             activeEpisode.subtitle_url = refreshed.subtitle_url;
           }
         }
-
       }
 
       if (!mounted) return;
 
       if (!streamUrl) {
         setLoadingVideo(false);
-        setStreamError(`Chưa có luồng phát trực tiếp cho tập ${currentEpisodeNumber}.`);
+        setStreamError(`Chưa có luồng phát trực tiếp khả dụng từ nhà cung cấp cho tập ${currentEpisodeNumber}.`);
         return;
       }
 
@@ -500,6 +402,7 @@ export function Watch() {
       prefetchNextEpisode(currentEpisodeIndex + 1);
 
       let hasRetriedProxy = false;
+      let hasRetriedRefresh = false;
       const isM3U8 = streamUrl.includes('.m3u8') || streamUrl.includes('m3u8') || activeEpisode.is_hls;
 
       if (isM3U8 && Hls.isSupported()) {
@@ -538,9 +441,32 @@ export function Watch() {
           }
         });
 
-        hls.on(Hls.Events.ERROR, (event, data) => {
+        hls.on(Hls.Events.ERROR, async (event, data) => {
           if (data.fatal) {
             console.warn('[HLS] Fatal error:', data.type, data.details);
+            // 1. Try refreshing stream link once via upstream Edge refresh-source
+            if (!hasRetriedRefresh && (activeEpisode.watch_url || drama?.slug)) {
+              hasRetriedRefresh = true;
+              console.log('[HLS] Stream expired or failed. Requesting fresh stream from Edge...');
+              try {
+                const refreshed = await refreshEpisodeStream({
+                  watch_url: activeEpisode.watch_url,
+                  slug: drama?.slug,
+                  ep: currentEpisodeNumber,
+                  rs_ctx: activeEpisode.rs_ctx || drama?.rs_ctx || '',
+                });
+                if (refreshed && refreshed.play_url && refreshed.play_url !== streamUrl) {
+                  streamUrl = refreshed.play_url;
+                  activeEpisode.play_url = streamUrl;
+                  hls.loadSource(streamUrl);
+                  return;
+                }
+              } catch (err) {
+                console.warn('[HLS] Refresh recovery failed:', err);
+              }
+            }
+
+            // 2. Try proxy stream retry
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !hasRetriedProxy && !streamUrl.includes('/api/proxy-stream')) {
               hasRetriedProxy = true;
               console.log('[HLS] Attempting CORS proxy stream retry...');
@@ -549,7 +475,7 @@ export function Watch() {
               hls.recoverMediaError();
             } else {
               setLoadingVideo(false);
-              setStreamError(`Không thể kết nối luồng phát tập ${currentEpisodeNumber}.`);
+              setStreamError(`Luồng phát từ nhà cung cấp bị gián đoạn hoặc hết hạn (Tập ${currentEpisodeNumber}). Bấm "Thử lại" hoặc chuyển sang tập khác.`);
             }
           }
         });
@@ -750,21 +676,21 @@ export function Watch() {
   const nartoWatchUrl = `https://narto-drama.com/detail/watch/forbidden-affair-taming-the-dragon-lord/${currentEpisodeNumber}?lang=id-ID&from=home`;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+    <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-5">
       {/* Top back navigation & quick breadcrumb */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <button
           onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer"
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-300 hover:text-white bg-slate-900/80 hover:bg-slate-800 px-3.5 py-2 rounded-xl border border-slate-800 transition-all cursor-pointer shadow-sm"
         >
-          <ArrowLeftOutlined /> Quay lại danh sách
+          <ArrowLeftOutlined className="text-rose-500" /> Quay lại danh sách
         </button>
 
         {/* Mode Switch: Ghép trọn bộ 1 tập vs Từng tập */}
-        <div className="flex items-center gap-2.5 bg-slate-900/90 border border-slate-700/80 rounded-2xl px-3 py-1.5 shadow-md">
-          <span className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+        <div className="flex items-center gap-2.5 bg-slate-900/90 border border-slate-700/80 rounded-2xl px-3.5 py-1.5 shadow-md backdrop-blur-md">
+          <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
             <VideoCameraFilled className={isFullMovieMode ? 'text-rose-500' : 'text-slate-500'} />
-            Chế độ ghép 1 tập:
+            Ghép trọn bộ 1 tập:
           </span>
           <Switch
             checked={isFullMovieMode}
@@ -786,27 +712,27 @@ export function Watch() {
           href={drama.watch_url || nartoWatchUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 font-medium"
+          className="inline-flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 font-semibold bg-rose-500/10 px-3.5 py-2 rounded-xl border border-rose-500/20 transition-all"
         >
-          <LinkOutlined /> Mở web gốc ({drama.category_name}) &rarr;
+          <LinkOutlined /> Mở web gốc ({drama.category_name || 'Upstream'}) &rarr;
         </a>
       </div>
 
       {/* Full Movie Banner Mode Alert */}
       {isFullMovieMode && (
-        <div className="mb-4 rounded-2xl bg-gradient-to-r from-rose-950/50 via-purple-950/30 to-slate-900/60 p-3.5 border border-rose-500/30 flex items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-600 text-white font-bold text-xs shadow-md">
+        <div className="mb-5 rounded-2xl bg-gradient-to-r from-rose-950/40 via-purple-950/30 to-slate-900/70 p-3.5 border border-rose-500/30 flex items-center justify-between gap-3 text-xs shadow-lg backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-rose-600 to-rose-500 text-white font-black text-xs shadow-md shadow-rose-600/30 shrink-0">
               <ThunderboltFilled />
             </span>
             <div>
-              <strong className="text-white">Đang xem chế độ Ghép trọn bộ ({totalEpisodes} tập):</strong>
-              <span className="text-slate-300 ml-1.5">
-                Các tập nối tiếp tự động không bị ngắt quãng như một bộ phim điện ảnh hoàn chỉnh (~{Math.round(estTotalSeconds / 60)} phút).
+              <strong className="text-white text-xs sm:text-sm">Đang xem chế độ Ghép trọn bộ ({totalEpisodes} tập):</strong>
+              <span className="text-slate-300 ml-1.5 hidden sm:inline leading-relaxed">
+                Tự động nối tiếp tập tiếp theo mượt mà như một bộ phim điện ảnh (~{Math.round(estTotalSeconds / 60)} phút).
               </span>
             </div>
           </div>
-          <span className="hidden sm:inline-flex rounded-full bg-rose-500/20 px-2.5 py-1 text-[11px] font-bold text-rose-300 border border-rose-500/30">
+          <span className="shrink-0 rounded-xl bg-rose-500/20 px-3 py-1 text-xs font-bold text-rose-300 border border-rose-500/40 font-mono shadow-sm">
             Tập {currentEpisodeNumber} / {totalEpisodes}
           </span>
         </div>
@@ -816,7 +742,10 @@ export function Watch() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Short Drama Player */}
         <div className="lg:col-span-8 flex flex-col items-center">
-          <div className="relative w-full max-w-[460px] aspect-[9/16] max-h-[78vh] rounded-3xl overflow-hidden bg-black border border-slate-800 shadow-2xl flex items-center justify-center group">
+          <div className="relative w-full max-w-[440px] aspect-[9/16] max-h-[78vh] rounded-3xl overflow-hidden bg-black border-2 border-slate-800/90 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)] flex items-center justify-center group ring-1 ring-white/10">
+            {/* Ambient Backlight Glow behind player */}
+            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-tr from-rose-600/20 via-transparent to-indigo-600/20 opacity-50 blur-xl pointer-events-none" />
+
             {/* HTML5 Video Element with HLS stream */}
             <video
               ref={videoRef}
@@ -835,16 +764,7 @@ export function Watch() {
                 saveCurrentTimestamp(drama?.title, currentEpisodeIndex, ct);
               }}
               onEnded={handleVideoEnded}
-              className="w-full h-full object-contain bg-black"
-            />
-
-            {/* Cinematic Subtitle Overlay */}
-            <SubtitleOverlay
-              cues={activeSubCues}
-              currentTime={currentTime}
-              enabled={subtitlesEnabled}
-              fontSize={subtitleFontSize}
-              offset={subtitleOffset}
+              className="w-full h-full object-contain bg-black z-10"
             />
 
 
@@ -947,12 +867,13 @@ export function Watch() {
 
           {/* Full Movie Timeline Scrubber (When Full Movie Mode is ON) */}
           {isFullMovieMode && (
-            <div className="w-full max-w-[460px] mt-3 p-3 rounded-2xl glass-panel">
-              <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1.5 font-mono">
-                <span className="text-rose-400 font-semibold">
+            <div className="w-full max-w-[440px] mt-3.5 p-3.5 rounded-2xl glass-panel border border-slate-800/90 shadow-xl">
+              <div className="flex items-center justify-between text-[11px] text-slate-300 mb-2 font-mono">
+                <span className="text-rose-400 font-bold flex items-center gap-1.5">
+                  <ThunderboltFilled className="text-amber-400" />
                   Tập {currentEpisodeNumber}/{totalEpisodes} ({formatTime(currentTotalSeconds)})
                 </span>
-                <span>Tổng: {formatTime(estTotalSeconds)}</span>
+                <span className="text-slate-400">Tổng thời lượng: {formatTime(estTotalSeconds)}</span>
               </div>
 
               {/* Progress Slider */}
@@ -962,11 +883,11 @@ export function Watch() {
                 max={estTotalSeconds}
                 value={currentTotalSeconds}
                 onChange={handleFullMovieSeek}
-                className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500 hover:accent-rose-400 transition-all"
               />
 
-              {/* Quick Jump Markers for 55 episodes */}
-              <div className="flex justify-between items-center mt-1 px-0.5 text-[9px] text-slate-500">
+              {/* Quick Jump Markers for episodes */}
+              <div className="flex justify-between items-center mt-1.5 px-0.5 text-[10px] text-slate-500 font-mono font-medium">
                 <span>Tập 1</span>
                 <span>Tập 15</span>
                 <span>Tập 30</span>
@@ -976,13 +897,13 @@ export function Watch() {
             </div>
           )}
 
-          {/* Quick Player Bar: Prev / Play / Next / Fullscreen */}
-          <div className="w-full max-w-[460px] mt-3 flex items-center justify-between gap-2 p-3 rounded-2xl glass-panel">
+          {/* Quick Player Bar: Prev / Play / Next / CC / Fullscreen */}
+          <div className="w-full max-w-[440px] mt-3.5 flex items-center justify-between gap-2 p-3 rounded-2xl glass-panel border border-slate-800/90 shadow-xl">
             <Button
               icon={<StepBackwardOutlined />}
               disabled={currentEpisodeIndex === 0}
               onClick={handlePrevEpisode}
-              className="rounded-xl border-slate-700 bg-slate-900/60 text-slate-300 text-xs"
+              className="rounded-xl border-slate-700 bg-slate-900/80 text-slate-200 text-xs font-semibold h-10 px-3 cursor-pointer"
             >
               Tập trước
             </Button>
@@ -991,7 +912,7 @@ export function Watch() {
               type="primary"
               icon={isPlaying ? <PauseCircleFilled /> : <PlayCircleFilled />}
               onClick={handlePlayToggle}
-              className="rounded-xl bg-rose-600 hover:bg-rose-500 font-semibold px-5 text-xs"
+              className="rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 font-bold px-5 text-xs h-10 shadow-lg shadow-rose-600/30 cursor-pointer"
             >
               {isPlaying ? 'Tạm dừng' : `Phát Tập ${currentEpisodeNumber}`}
             </Button>
@@ -1000,71 +921,39 @@ export function Watch() {
               icon={<StepForwardOutlined />}
               disabled={currentEpisodeIndex + 1 >= episodes.length}
               onClick={handleNextEpisode}
-              className="rounded-xl border-slate-700 bg-slate-900/60 text-slate-300 text-xs"
+              className="rounded-xl border-slate-700 bg-slate-900/80 text-slate-200 text-xs font-semibold h-10 px-3 cursor-pointer"
             >
               Tập tiếp
             </Button>
 
-            {/* Subtitles (CC) Button */}
-            <Tooltip
-              title={`Phụ đề (CC): ${
-                subtitlesEnabled
-                  ? subtitleLanguage === 'vi'
-                    ? 'Tiếng Việt'
-                    : subtitleLanguage === 'custom'
-                    ? 'Tùy chỉnh'
-                    : 'Bản Gốc'
-                  : 'Đang Tắt'
-              }`}
-            >
-              <button
-                onClick={() => setSubtitlesModalOpen(true)}
-                className={`relative px-2.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer border flex items-center gap-1 ${
-                  subtitlesEnabled
-                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-sm shadow-rose-500/10'
-                    : 'bg-slate-850 text-slate-400 border-slate-700 hover:text-slate-200'
-                }`}
-              >
-                <span>CC</span>
-                <span className="text-[10px] font-mono opacity-90">
-                  {subtitlesEnabled ? (subtitleLanguage === 'vi' ? 'VI' : subtitleLanguage === 'custom' ? 'FILE' : 'EN') : 'OFF'}
-                </span>
-                {isTranslatingSubtitles && (
-                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                  </span>
-                )}
-              </button>
-            </Tooltip>
-
             <Tooltip title="Toàn màn hình">
               <button
                 onClick={handleFullscreen}
-                className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition-colors cursor-pointer"
               >
                 <FullscreenOutlined className="text-base" />
               </button>
             </Tooltip>
           </div>
 
-
           {/* Action Row */}
-          <div className="w-full max-w-[460px] mt-3 flex items-center justify-between gap-3 p-3 rounded-2xl glass-panel">
+          <div className="w-full max-w-[440px] mt-3 flex items-center justify-between gap-3 p-3 rounded-2xl glass-panel border border-slate-800/90 shadow-xl">
             <Button
               icon={bookmarked ? <HeartFilled className="text-rose-500" /> : <HeartOutlined />}
               onClick={toggleFavorite}
-              className="rounded-xl border-slate-700 bg-slate-900/60 text-slate-200 text-xs flex-1"
+              className={`rounded-xl border-slate-700 text-xs font-semibold flex-1 h-10 cursor-pointer ${
+                bookmarked ? 'bg-rose-950/40 text-rose-300 border-rose-500/40' : 'bg-slate-900/80 text-slate-200'
+              }`}
             >
-              {bookmarked ? 'Đã lưu offline' : 'Lưu phim'}
+              {bookmarked ? 'Đã lưu trong kho' : 'Lưu vào kho'}
             </Button>
 
             <Button
               icon={<ShareAltOutlined />}
               onClick={handleShare}
-              className="rounded-xl border-slate-700 bg-slate-900/60 text-slate-200 text-xs flex-1"
+              className="rounded-xl border-slate-700 bg-slate-900/80 text-slate-200 text-xs font-semibold flex-1 h-10 cursor-pointer hover:text-white hover:border-slate-500"
             >
-              Chia sẻ
+              Chia sẻ liên kết
             </Button>
           </div>
         </div>
@@ -1072,12 +961,12 @@ export function Watch() {
         {/* Right Column: Episodes Playlist & Drama Details */}
         <div className="lg:col-span-4 flex flex-col gap-6 w-full">
           {/* Episodes Playlist Box */}
-          <div className="rounded-3xl glass-panel p-5 border border-slate-800 shadow-xl">
-            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-800">
-              <h3 className="font-bold text-white text-base font-display flex items-center gap-2">
-                <span>Danh Sách Các Tập</span>
+          <div className="rounded-3xl glass-panel p-5 sm:p-6 border border-slate-800 shadow-2xl">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800/80">
+              <h3 className="font-extrabold text-white text-base font-display flex items-center gap-2">
+                <span>Danh Sách Tập Phim</span>
               </h3>
-              <span className="text-xs text-rose-400 font-semibold bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
+              <span className="text-xs text-rose-400 font-bold bg-rose-500/10 px-3 py-1 rounded-full border border-rose-500/20 font-mono shadow-sm">
                 {totalEpisodes} tập
               </span>
             </div>
@@ -1093,9 +982,9 @@ export function Watch() {
                     <button
                       key={bIdx}
                       onClick={() => setActiveBatchIndex(bIdx)}
-                      className={`shrink-0 px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                         isActive
-                          ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                          ? 'bg-rose-600 text-white shadow-md shadow-rose-600/40 ring-1 ring-rose-400'
                           : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800'
                       }`}
                     >
@@ -1125,15 +1014,15 @@ export function Watch() {
                     <button
                       key={ep.id || idx}
                       onClick={() => handleSelectEpisode(idx)}
-                      className={`h-11 rounded-xl text-xs font-bold transition-all cursor-pointer flex flex-col items-center justify-center ${
+                      className={`h-11 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex flex-col items-center justify-center ${
                         isActive
-                          ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400'
-                          : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800'
+                          ? 'bg-gradient-to-tr from-rose-600 to-rose-500 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 transform scale-105'
+                          : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800/80 hover:border-slate-700'
                       }`}
                     >
                       <span>{epNum}</span>
                       {isActive && (
-                        <span className="text-[9px] uppercase tracking-tighter opacity-90 font-mono">Đang phát</span>
+                        <span className="text-[8px] uppercase tracking-tighter opacity-90 font-mono">Đang phát</span>
                       )}
                     </button>
                   );
@@ -1143,7 +1032,7 @@ export function Watch() {
           </div>
 
           {/* Drama Title & Synopsis */}
-          <div className="rounded-3xl glass-panel p-6 border border-slate-800 shadow-xl">
+          <div className="rounded-3xl glass-panel p-6 border border-slate-800 shadow-2xl">
             {/* Auto-Translation Control Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-5 p-3 rounded-2xl bg-slate-900/90 border border-slate-750 shadow-inner">
               <div className="flex items-center gap-2.5">
@@ -1206,7 +1095,7 @@ export function Watch() {
               </div>
             </div>
 
-            <h1 className="text-xl sm:text-2xl font-bold text-white mb-2 font-display">
+            <h1 className="text-xl sm:text-2xl font-black text-white mb-2 font-display tracking-tight">
               {displayTitle}
             </h1>
 
@@ -1217,58 +1106,27 @@ export function Watch() {
             )}
 
             <div className="flex flex-wrap items-center gap-2 mb-4">
-              <span className="rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2.5 py-0.5 text-xs font-semibold">
+              <span className="rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2.5 py-1 text-xs font-bold shadow-sm">
                 {displayCategory || drama.category_name}
               </span>
               {displayTags?.map((tag, idx) => (
                 <span
                   key={idx}
-                  className="rounded-md bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 text-xs"
+                  className="rounded-xl bg-slate-800/80 text-slate-300 border border-slate-700/60 px-2.5 py-1 text-xs font-medium"
                 >
                   #{tag}
                 </span>
               ))}
             </div>
 
-            <h4 className="text-xs uppercase tracking-wider font-bold text-slate-400 mb-2">Tóm tắt cốt truyện</h4>
-            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed whitespace-pre-line max-h-56 overflow-y-auto pr-1">
-              {displayDescription}
+            <h4 className="text-xs uppercase tracking-wider font-extrabold text-slate-400 mb-2">Tóm tắt nội dung</h4>
+            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed whitespace-pre-line max-h-56 overflow-y-auto pr-1 font-normal">
+              {displayDescription || 'Đang cập nhật tóm tắt nội dung cho bộ phim này.'}
             </p>
-          </div>
-
-          {/* Instructions on Merging & Downloading */}
-          <div className="rounded-3xl bg-gradient-to-br from-slate-900/90 to-indigo-950/40 border border-indigo-500/20 p-5 shadow-lg">
-            <h4 className="font-bold text-white text-sm mb-2 flex items-center gap-2">
-              <CheckCircleFilled className="text-emerald-400" /> Về Tính Năng Ghép Tập
-            </h4>
-            <p className="text-xs text-slate-400 leading-relaxed mb-3">
-              • <strong>Xem trong app:</strong> Chế độ ghép 1 tập tự động nối tiếp liền mạch từ tập 1 đến tập 55 không cần thao tác bấm chuyển.
-              <br />
-              • <strong>Tải về máy tính:</strong> Bạn có thể dùng script Node.js hoặc FFmpeg nối 55 luồng HLS thành 1 file MP4 duy nhất.
-            </p>
-            <a
-              href={nartoWatchUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 font-semibold"
-            >
-              Mở liên kết web gốc: narto-drama.com &rarr;
-            </a>
           </div>
         </div>
       </div>
 
-      {/* Subtitles & Translation Settings Modal */}
-      <SubtitleSettingsModal
-        open={subtitlesModalOpen}
-        onClose={() => setSubtitlesModalOpen(false)}
-        hasOriginalSubtitles={rawSubtitleCues.length > 0}
-        rawCuesCount={rawSubtitleCues.length}
-        translatedCuesCount={translatedSubtitleCues.length}
-        isTranslating={isTranslatingSubtitles}
-        onCustomSubtitleLoaded={(custom) => setCustomSubtitle(custom)}
-        customSubtitleName={customSubtitle?.name}
-      />
     </div>
   );
 }

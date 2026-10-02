@@ -25,17 +25,20 @@ export function SubtitleOverlay({
   }
 
   const sizeClasses = {
-    sm: 'text-xs sm:text-sm leading-relaxed px-3 py-1',
-    md: 'text-sm sm:text-base leading-snug px-4 py-1.5',
-    lg: 'text-base sm:text-lg leading-snug px-5 py-2',
-  }[fontSize] || 'text-sm sm:text-base leading-snug px-4 py-1.5';
+    sm: 'text-sm sm:text-base leading-relaxed px-3 py-1',
+    md: 'text-base sm:text-lg md:text-xl leading-snug px-4 py-1.5',
+    lg: 'text-lg sm:text-xl md:text-2xl leading-snug px-5 py-2',
+  }[fontSize] || 'text-base sm:text-lg md:text-xl leading-snug px-4 py-1.5';
 
   return (
-    <div className="absolute bottom-10 sm:bottom-12 left-3 right-3 z-25 pointer-events-none flex justify-center items-center text-center animate-fade-in select-none">
+    <div className="absolute bottom-[25%] sm:bottom-[20%] left-4 right-4 z-25 pointer-events-none flex justify-center items-center text-center animate-fade-in select-none">
       <div
-        className={`inline-block max-w-[92%] rounded-2xl bg-black/85 backdrop-blur-md border border-white/15 shadow-2xl shadow-black/80 transition-all ${sizeClasses}`}
+        className={`inline-block max-w-[95%] transition-all ${sizeClasses}`}
+        style={{
+          textShadow: '0px 0px 4px rgba(0,0,0,0.8), 0px 2px 6px rgba(0,0,0,0.9), 0px -1px 2px rgba(0,0,0,0.8), 1px 1px 2px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.8)'
+        }}
       >
-        <span className="text-white font-medium tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+        <span className="text-[#facc15] font-semibold tracking-wide" style={{ fontFamily: 'sans-serif' }}>
           {activeCue.text}
         </span>
       </div>

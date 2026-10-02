@@ -232,10 +232,21 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
     poster = normalizePosterUrl(posterMatch[1]);
   }
 
-  // Extract drama slug early (handles /detail/watch/:slug, /detail/dummy/:prov/:id, etc.)
-  const slugMatch = finalUrl.match(/\/detail\/(?:watch|dummy)(?:\/[^\/?#]+)?\/([^\/?#]+)/) ||
-                    watchUrl.match(/\/detail\/(?:watch|dummy)(?:\/[^\/?#]+)?\/([^\/?#]+)/);
-  const dramaSlug = slugMatch ? slugMatch[1] : (slug || '');
+  const extractSlug = (u) => {
+    try {
+      const match = u.match(/\/detail\/watch\/([^\/?#]+)(?:\/(\d+))?/);
+      if (match) return match[1];
+    } catch(e) {}
+    return '';
+  };
+  const dramaSlug = extractSlug(finalUrl) || extractSlug(watchUrl) || slug || '';
+
+  // Extract refreshSourceContextToken and base url from upstream page if present
+  let contextToken = '';
+  const tokenMatch = html.match(/refreshSourceContextToken\s*=\s*["']([^"']+)["']/);
+  if (tokenMatch) {
+    contextToken = tokenMatch[1];
+  }
 
   // Step 1b: If finalUrl was redirected to home page (e.g. narto-drama.com/ or narto-drama.com/?lang=...)
   // it means search/import failed with lang=vi-VN. Try with the native store lang=id-ID / en-US!
@@ -250,6 +261,8 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
         pageRes = fbRes;
         html = await fbRes.text();
         finalUrl = fbRes.url;
+        const fbTokenMatch = html.match(/refreshSourceContextToken\s*=\s*["']([^"']+)["']/);
+        if (fbTokenMatch) contextToken = fbTokenMatch[1];
       }
     } catch (e) {
       console.warn('[DramaCrawler] Fallback fetch failed:', e.message);
@@ -404,6 +417,7 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
       thumb_url: item.thumb_url || poster,
       subtitle_url: subUrl,
       multi_subtitles: multiSubs,
+      rs_ctx: contextToken || '',
       is_playable: true,
       is_hls: playUrl.includes('.m3u8') || item.browser_prefetch_mode === 'hls'
     };
@@ -418,6 +432,7 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
     description,
     poster,
     final_url: finalUrl,
+    rs_ctx: contextToken || '',
     total_episodes: cleanEpisodes.length,
     episodes: cleanEpisodes,
     error: isOk ? null : 'Hiện chưa có tập phim khả dụng từ nhà cung cấp cho tựa phim này.'
@@ -425,30 +440,28 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
 }
 
 // 5. On-Demand Episode Stream Resolver (Tier 1 Edge -> Tier 2 Origin -> Tier 3 HTML)
-export async function refreshEpisodeStream({ watch_url, slug, ep = '1', lang = 'vi-VN' }) {
+export async function refreshEpisodeStream({ watch_url, slug, ep = '1', lang = 'vi-VN', rs_ctx = '' }) {
   let epNum = parseInt(ep || '1', 10);
   let dramaSlug = slug;
 
   if (!dramaSlug && watch_url) {
-    const match = watch_url.match(/\/detail\/(?:watch|dummy)(?:\/[^\/?#]+)?\/([^\/?#]+)(?:\/(\d+))?/);
-    if (match) {
-      dramaSlug = match[1];
-      if (!ep && match[2]) {
-        epNum = parseInt(match[2], 10);
+    try {
+      const match = watch_url.match(/\/detail\/watch\/([^\/?#]+)(?:\/(\d+))?/);
+      if (match) {
+        dramaSlug = match[1];
+        if (!ep && match[2]) epNum = parseInt(match[2], 10);
       }
-    }
+    } catch(e) {}
   }
 
   // If still no slug and watch_url is search/import, follow redirect to extract slug
   if (!dramaSlug && watch_url && watch_url.includes('/search/import')) {
     try {
       const res = await fetch(watch_url, { headers: getHeaders(), redirect: 'follow' });
-      const m = res.url.match(/\/detail\/(?:watch|dummy)(?:\/[^\/?#]+)?\/([^\/?#]+)(?:\/(\d+))?/);
-      if (m) {
-        dramaSlug = m[1];
-        if (!ep && m[2]) {
-          epNum = parseInt(m[2], 10);
-        }
+      const match = res.url.match(/\/detail\/watch\/([^\/?#]+)(?:\/(\d+))?/);
+      if (match) {
+        dramaSlug = match[1];
+        if (!ep && match[2]) epNum = parseInt(match[2], 10);
       }
     } catch {}
   }
@@ -463,25 +476,35 @@ export async function refreshEpisodeStream({ watch_url, slug, ep = '1', lang = '
     'Referer': `${BASE_URL}/detail/watch/${dramaSlug}/${epNum}?lang=${lang}&from=home`
   });
 
-  // Tier 1: Query Edge refresh-source
+  const ctxParam = rs_ctx ? `&rs_ctx=${encodeURIComponent(rs_ctx)}` : '';
+
+  // Tier 1: Query Edge refresh-source (with force_edge & rs_ctx)
   let streamData = null;
-  try {
-    const edgeRefreshUrl = `https://edge.narto-drama.com/e/rs/detail/watch/${dramaSlug}/${epNum}/refresh-source?force=1&force_edge=1&lang=${lang}`;
-    const rRes = await fetch(edgeRefreshUrl, { headers });
-    if (rRes.ok) {
-      const j = await rRes.json();
-      if (j && (j.play_url || j.direct_play_url)) {
-        streamData = j;
+  const edgeVariants = [
+    `https://edge.narto-drama.com/e/rs/detail/watch/${dramaSlug}/${epNum}/refresh-source?force=1&force_edge=1&lang=${lang}${ctxParam}`,
+    `https://edge.narto-drama.com/e/rs/detail/watch/${dramaSlug}/${epNum}/refresh-source?force=1&no_cache=1&lang=${lang}${ctxParam}`,
+    `https://edge.narto-drama.com/e/rs/detail/watch/${dramaSlug}/${epNum}/refresh-source?force=1&lang=${lang}${ctxParam}`
+  ];
+
+  for (const edgeRefreshUrl of edgeVariants) {
+    try {
+      const rRes = await fetch(edgeRefreshUrl, { headers });
+      if (rRes.ok) {
+        const j = await rRes.json();
+        if (j && (j.play_url || j.direct_play_url)) {
+          streamData = j;
+          break;
+        }
       }
+    } catch (e) {
+      console.warn('[DramaCrawler] Edge resolution attempt failed:', e.message);
     }
-  } catch (e) {
-    console.warn('[DramaCrawler] Tier 1 Edge resolution failed:', e.message);
   }
 
   // Tier 2: Query Origin refresh-source
   if (!streamData) {
     try {
-      const originRefreshUrl = `${BASE_URL}/detail/watch/${dramaSlug}/${epNum}/refresh-source?force=1&force_edge=1&lang=${lang}`;
+      const originRefreshUrl = `${BASE_URL}/detail/watch/${dramaSlug}/${epNum}/refresh-source?force=1&force_edge=1&lang=${lang}${ctxParam}`;
       const rRes2 = await fetch(originRefreshUrl, { headers });
       if (rRes2.ok) {
         const j2 = await rRes2.json();

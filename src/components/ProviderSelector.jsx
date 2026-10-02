@@ -58,13 +58,13 @@ export function ProviderSelector({ providers = [], activeProvider = 'anyreel', o
         <button
           type="button"
           onClick={() => handleSelect('all')}
-          className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+          className={`shrink-0 px-4 py-2 rounded-2xl text-xs font-bold transition-all duration-200 cursor-pointer ${
             activeProvider === 'all'
-              ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 ring-2 ring-rose-500/50'
-              : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800'
+              ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/40 ring-2 ring-rose-500/40'
+              : 'glass-pill text-slate-300 hover:text-white'
           }`}
         >
-          {activeProvider === 'all' && <CheckOutlined className="text-[10px] mr-1" />}
+          {activeProvider === 'all' && <CheckOutlined className="text-[10px] mr-1.5" />}
           Tất cả
         </button>
 
@@ -75,10 +75,10 @@ export function ProviderSelector({ providers = [], activeProvider = 'anyreel', o
               key={prov.key}
               type="button"
               onClick={() => handleSelect(prov.key)}
-              className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`shrink-0 px-4 py-2 rounded-2xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
                 isActive
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 ring-2 ring-rose-500/50 font-semibold'
-                  : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800'
+                  ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/40 ring-2 ring-rose-500/40'
+                  : 'glass-pill text-slate-300 hover:text-white'
               }`}
             >
               {isActive && <CheckOutlined className="text-[10px]" />}
@@ -90,7 +90,7 @@ export function ProviderSelector({ providers = [], activeProvider = 'anyreel', o
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800/60 text-slate-400 hover:text-white border border-dashed border-slate-700 hover:border-slate-500 cursor-pointer"
+          className="shrink-0 px-3.5 py-2 rounded-2xl text-xs font-bold glass-pill text-rose-400 hover:text-rose-300 border-dashed border-rose-500/40 hover:border-rose-400 cursor-pointer"
         >
           + Thêm ({Math.max(0, providers.length - displayPills.length)})
         </button>
