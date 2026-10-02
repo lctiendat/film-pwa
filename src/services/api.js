@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { FALLBACK_DATA } from './fallbackData';
 import { getSectionsCache, saveSectionsCache, getDB } from './db';
-import dragonLordEpisodes from './dragonLordEpisodes.json';
 
 // Create Axios client with sensible timeout
 export const apiClient = axios.create({
@@ -79,11 +78,21 @@ export async function fetchProviderSections(provider = '', lang = 'vi-VN', page 
     };
   }
 
-  // Tier 3: Built-in fallback dataset
+  // Tier 3: Built-in fallback dataset (ONLY use AnyReel fallback if provider is indeed anyreel or all)
+  if (provKey === 'anyreel' || provKey === 'all') {
+    return {
+      ...FALLBACK_DATA,
+      active_provider: provKey,
+      _source: 'fallback',
+    };
+  }
+
   return {
-    ...FALLBACK_DATA,
+    ok: true,
     active_provider: provKey,
-    _source: 'fallback',
+    sections: [],
+    providers: FALLBACK_DATA.providers || [],
+    _source: 'empty',
   };
 }
 
@@ -175,16 +184,7 @@ export async function fetchDramaEpisodes(drama, lang = 'vi-VN') {
     console.warn('[IndexedDB] Error checking episodes_cache:', e);
   }
 
-  // 2. Pre-bundled episodes for Dragon Lord
-  const isDragonLord =
-    drama.book_id === '6a97e310be6de7bf87416219' ||
-    (drama.title && drama.title.toLowerCase().includes('dragon lord'));
-
-  if (isDragonLord && Array.isArray(dragonLordEpisodes) && dragonLordEpisodes.length > 0) {
-    return dragonLordEpisodes;
-  }
-
-  // 3. For ANY movie, fetch dynamically via our local crawler /api/drama endpoint
+  // 2. Fetch dynamically via our crawler /api/drama endpoint
   const watchUrl = drama.watch_url || drama.url || '';
   if (watchUrl) {
     try {
@@ -218,17 +218,7 @@ export async function fetchDramaEpisodes(drama, lang = 'vi-VN') {
     }
   }
 
-  // 4. Fallback: generate on-demand episode placeholders (NEVER inject Dragon Lord into other films!)
-  const count = drama.chapter_count || 45;
-  return Array.from({ length: count }, (_, i) => ({
-    id: i + 1,
-    route_episode_number: i + 1,
-    number: i + 1,
-    title: `Tập ${i + 1}`,
-    play_url: '',
-    is_playable: true,
-    watch_url: drama.watch_url || '',
-  }));
+  return [];
 }
 
 /**

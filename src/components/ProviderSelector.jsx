@@ -134,10 +134,11 @@ export function ProviderSelector({ providers = [], activeProvider = 'anyreel', o
 
           <div className="max-h-[55vh] overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
             {filteredProviders.map((prov) => {
-              const isActive = prov.key === activeProvider;
+              const isActive = prov.key.toLowerCase() === (activeProvider || '').toLowerCase();
               return (
                 <button
                   key={prov.key}
+                  type="button"
                   onClick={() => handleSelect(prov.key)}
                   className={`p-3 rounded-xl text-left transition-all border flex items-center justify-between text-xs font-medium cursor-pointer ${
                     isActive

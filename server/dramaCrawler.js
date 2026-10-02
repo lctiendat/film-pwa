@@ -5,12 +5,11 @@ const BASE_URL = 'https://narto-drama.com';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 export function getHeaders(extraHeaders = {}) {
-  const nd_ck = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  const nd_ck = '18e38f90248' + Math.random().toString(16).slice(2, 10);
   return {
     'User-Agent': USER_AGENT,
     'Cookie': `nd_ck=${nd_ck}`,
-    'Accept': 'application/json, text/plain, text/html, */*',
-    'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept': 'application/json, text/plain, */*',
     ...extraHeaders
   };
 }
@@ -117,18 +116,18 @@ export async function fetchSections(provider = 'anyreel', page = 1, query = '', 
     }
   }
 
-  // Fallback 2: If still 0 items, fallback to Indonesian (id-ID, upstream native store)
-  if (totalItems === 0 && !query && lang !== 'id-ID') {
-    const fb2 = await fetchSectionsFromUpstream('id-ID', false);
+  // Fallback 2: If still 0 items, fallback to Vietnamese (vi-VN)
+  if (totalItems === 0 && !query && lang !== 'vi-VN') {
+    const fb2 = await fetchSectionsFromUpstream('vi-VN', false);
     if (countItems(fb2) > 0) {
       data = fb2;
       totalItems = countItems(data);
     }
   }
 
-  // Fallback 3: If still 0 items, fallback to English (en-US)
-  if (totalItems === 0 && !query && lang !== 'en-US') {
-    const fb3 = await fetchSectionsFromUpstream('en-US', false);
+  // Fallback 3: If still 0 items, retry with upstream default store 'id-ID'
+  if (totalItems === 0 && !query && lang !== 'id-ID') {
+    const fb3 = await fetchSectionsFromUpstream('id-ID', false);
     if (countItems(fb3) > 0) {
       data = fb3;
       totalItems = countItems(data);
@@ -280,22 +279,42 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
     }
   }
 
-  // Step 2: If episodes are not in current page, directly fetch /detail/watch/{dramaSlug}/1
+  // If not found in current page, check for /detail/watch/{dramaSlug}/1 specifically
   if (episodes.length === 0 && dramaSlug) {
     try {
-      const ep1Url = `${BASE_URL}/detail/watch/${dramaSlug}/1?lang=${encodeURIComponent(lang)}&from=home`;
-      const pageRes2 = await fetch(ep1Url, { headers });
-      const html2 = await pageRes2.text();
-      const epMatch2 = html2.match(/const episodeItemsRaw = (\[[\s\S]*?\]);/);
-      if (epMatch2) {
-        try {
-          episodes = JSON.parse(epMatch2[1]);
-        } catch (e) {
-          console.error('[DramaCrawler] Error parsing episodeItemsRaw (step 2):', e);
+      const escapedSlug = dramaSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const ep1Regex = new RegExp(`href="([^"]*\\/detail\\/watch\\/${escapedSlug}\\/1[^"]*)"`, 'i');
+      const ep1LinkMatch = html.match(ep1Regex);
+      if (ep1LinkMatch) {
+        const ep1Url = (ep1LinkMatch[1].startsWith('http') ? ep1LinkMatch[1] : `${BASE_URL}${ep1LinkMatch[1]}`).replace(/&amp;/g, '&');
+        const pageRes2 = await fetch(ep1Url, { headers });
+        const html2 = await pageRes2.text();
+        const epMatch2 = html2.match(/const episodeItemsRaw = (\[[\s\S]*?\]);/);
+        if (epMatch2) {
+          try {
+            episodes = JSON.parse(epMatch2[1]);
+          } catch (e) {
+            console.error('[DramaCrawler] Error parsing episodeItemsRaw (step 2):', e);
+          }
         }
-      }
-      if (html2.includes('class="episode-item"')) {
-        html = html2;
+        if (html2.includes('class="episode-item"')) {
+          html = html2;
+        }
+      } else {
+        const ep1DirectUrl = `${BASE_URL}/detail/watch/${dramaSlug}/1?lang=${encodeURIComponent(lang)}&from=home`;
+        const pageRes2 = await fetch(ep1DirectUrl, { headers });
+        const html2 = await pageRes2.text();
+        const epMatch2 = html2.match(/const episodeItemsRaw = (\[[\s\S]*?\]);/);
+        if (epMatch2) {
+          try {
+            episodes = JSON.parse(epMatch2[1]);
+          } catch (e) {
+            console.error('[DramaCrawler] Error parsing episodeItemsRaw (step 2 fallback):', e);
+          }
+        }
+        if (html2.includes('class="episode-item"')) {
+          html = html2;
+        }
       }
     } catch (e) {
       console.warn('[DramaCrawler] Step 2 direct ep1 fetch failed:', e.message);
@@ -418,12 +437,12 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
       subtitle_url: subUrl,
       multi_subtitles: multiSubs,
       rs_ctx: contextToken || '',
-      is_playable: true,
+      is_playable: !!(playUrl || item.direct_play_url),
       is_hls: playUrl.includes('.m3u8') || item.browser_prefetch_mode === 'hls'
     };
   });
 
-  const isOk = cleanEpisodes.length > 0;
+  const isOk = cleanEpisodes.length > 0 && cleanEpisodes.some(e => e.play_url || e.direct_play_url);
 
   return {
     ok: isOk,

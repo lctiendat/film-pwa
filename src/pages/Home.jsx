@@ -44,7 +44,7 @@ export function Home() {
 
   const queryProvider = activeProvider === 'all' ? 'anyreel' : activeProvider;
 
-  // Use TanStack React Query to fetch provider sections with placeholder retention
+  // Use TanStack React Query to fetch provider sections
   const {
     data,
     isLoading,
@@ -55,7 +55,6 @@ export function Home() {
   } = useQuery({
     queryKey: ['provider-sections', queryProvider],
     queryFn: () => fetchProviderSections(queryProvider),
-    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000, // 5 minutes fresh
     gcTime: 30 * 60 * 1000,
   });
