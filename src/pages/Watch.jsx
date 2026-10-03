@@ -83,6 +83,17 @@ export function Watch() {
 
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
+  const playerContainerRef = useRef(null);
+
+  // Auto-scroll focus to player on mobile upon mounting or changing drama/episode
+  const scrollToPlayerOnMobile = () => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (playerContainerRef.current) {
+        playerContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  };
 
   // LocalStorage timestamps helpers
   const getSavedTimestamp = (title, epIdx) => {
@@ -103,13 +114,14 @@ export function Watch() {
     } catch {}
   };
 
-  // Reset state on drama change
+  // Reset state on drama change & immediately scroll to player
   useEffect(() => {
     setDrama(location.state?.drama || null);
     setEpisodes([]);
     setCurrentEpisodeIndex(0);
     setLoading(true);
     setStreamError(null);
+    scrollToPlayerOnMobile();
   }, [bookId]);
 
   // 1. Load Drama Info & Full Details
@@ -556,6 +568,7 @@ export function Watch() {
     if (index < 0 || index >= episodes.length) return;
     setCurrentEpisodeIndex(index);
     setIsPlaying(true);
+    scrollToPlayerOnMobile();
     setTimeout(() => {
       if (videoRef.current) {
         videoRef.current.play().catch(() => {});
@@ -750,7 +763,7 @@ export function Watch() {
       {/* Main Grid: Vertical Player on left/center, Episode Picker & Details on right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Short Drama Player */}
-        <div className="lg:col-span-8 flex flex-col items-center">
+        <div ref={playerContainerRef} className="lg:col-span-8 flex flex-col items-center scroll-mt-4 w-full">
           <div className="relative w-full max-w-[440px] aspect-[9/16] max-h-[78vh] rounded-3xl overflow-hidden bg-black border-2 border-slate-800/90 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)] flex items-center justify-center group ring-1 ring-white/10">
             {/* Ambient Backlight Glow behind player */}
             <div className="absolute -inset-1 rounded-3xl bg-gradient-to-tr from-rose-600/20 via-transparent to-indigo-600/20 opacity-50 blur-xl pointer-events-none" />
