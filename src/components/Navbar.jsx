@@ -15,12 +15,15 @@ import {
 import { useDramaStore } from '../store/useDramaStore';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { Modal } from 'antd';
+import { ExportOutlined, PlusSquareOutlined } from '@ant-design/icons';
 
 export function Navbar() {
   const location = useLocation();
   const { favoritesCount, refreshCounts, autoTranslate, setAutoTranslate } = useDramaStore();
-  const { isInstallable, promptInstall } = useInstallPrompt();
+  const { isInstallable, isIOS, promptInstall } = useInstallPrompt();
   const { isOnline } = useOnlineStatus();
+  const [showIOSModal, setShowIOSModal] = React.useState(false);
 
   useEffect(() => {
     refreshCounts();
@@ -180,8 +183,14 @@ export function Navbar() {
 
           {isInstallable && (
             <button
-              onClick={promptInstall}
-              className="flex flex-col items-center py-1 px-4 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer"
+              onClick={() => {
+                if (isIOS) {
+                  setShowIOSModal(true);
+                } else {
+                  promptInstall();
+                }
+              }}
+              className="flex flex-col items-center py-1 px-4 text-[11px] font-semibold text-rose-400 hover:text-rose-300 cursor-pointer"
             >
               <DownloadOutlined className="text-xl mb-1" />
               <span>Cài App</span>
@@ -189,6 +198,66 @@ export function Navbar() {
           )}
         </div>
       </div>
+
+      {/* iOS Modal Guide in Navbar */}
+      <Modal
+        open={showIOSModal}
+        onCancel={() => setShowIOSModal(false)}
+        footer={[
+          <Button
+            key="ok"
+            type="primary"
+            onClick={() => setShowIOSModal(false)}
+            className="rounded-xl bg-rose-600 hover:bg-rose-500 font-semibold"
+          >
+            Đã hiểu
+          </Button>
+        ]}
+        title={<span className="text-white font-bold text-base">Hướng dẫn cài đặt trên iPhone / iPad</span>}
+        centered
+        className="dark-modal"
+      >
+        <div className="py-2 text-slate-200 text-sm space-y-3.5 leading-relaxed">
+          <p className="text-xs text-slate-400">
+            Hệ điều hành iOS Safari hỗ trợ cài đặt ứng dụng web trực tiếp vào màn hình chính mà không cần App Store:
+          </p>
+          <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/80 border border-slate-700/60">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-500/20 text-rose-400 font-bold text-sm">
+              1
+            </span>
+            <div>
+              <strong className="text-white block text-xs">Mở thanh công cụ Safari</strong>
+              <span className="text-xs text-slate-300">
+                Nhấn vào nút <strong className="text-rose-400 inline-flex items-center gap-1">Chia sẻ <ExportOutlined /></strong> ở dưới cùng màn hình Safari.
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/80 border border-slate-700/60">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-500/20 text-rose-400 font-bold text-sm">
+              2
+            </span>
+            <div>
+              <strong className="text-white block text-xs">Thêm vào Màn hình chính</strong>
+              <span className="text-xs text-slate-300">
+                Cuộn danh sách xuống và chọn <strong className="text-rose-400 inline-flex items-center gap-1">Thêm vào MH chính <PlusSquareOutlined /></strong> (Add to Home Screen).
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/80 border border-slate-700/60">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-500/20 text-rose-400 font-bold text-sm">
+              3
+            </span>
+            <div>
+              <strong className="text-white block text-xs">Xác nhận Thêm</strong>
+              <span className="text-xs text-slate-300">
+                Bấm nút <strong className="text-rose-400">Thêm</strong> ở góc trên bên phải để hoàn tất. Biểu tượng ứng dụng FilmDrama sẽ xuất hiện ngay trên màn hình điện thoại!
+              </span>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

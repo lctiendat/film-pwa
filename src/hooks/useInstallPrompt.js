@@ -5,15 +5,26 @@ export function useInstallPrompt() {
   const [isInstallable, setIsInstallable] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
 
+  const [isIOS, setIsIOS] = useState(false);
+
   useEffect(() => {
-    // Check if already running in standalone mode (installed PWA)
+    // Check if running in standalone mode (already installed PWA)
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true;
+      window.navigator.standalone === true ||
+      document.referrer.includes('android-app://');
 
     if (isStandalone) {
       setIsInstalled(true);
       return;
+    }
+
+    // Detect iOS devices (iPhone, iPad, iPod)
+    const ua = window.navigator.userAgent.toLowerCase();
+    const isIosDevice = /iphone|ipad|ipod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isIosDevice) {
+      setIsIOS(true);
+      setIsInstallable(true);
     }
 
     const handleBeforeInstallPrompt = (e) => {
@@ -65,6 +76,7 @@ export function useInstallPrompt() {
   return {
     isInstallable,
     isInstalled,
+    isIOS,
     promptInstall,
   };
 }

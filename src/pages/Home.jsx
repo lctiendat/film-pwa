@@ -266,9 +266,27 @@ export function Home() {
             <div className="py-16 text-center">
               <Empty
                 description={
-                  <span className="text-slate-400">
-                    Chưa có danh mục phim từ {activeProviderLabel}. Vui lòng chọn nhà cung cấp khác.
-                  </span>
+                  <div className="flex flex-col items-center gap-3 text-slate-400">
+                    <span>Chưa có danh mục phim hiển thị từ {activeProviderLabel}.</span>
+                    <div className="flex items-center gap-2 mt-1">
+                      {activeTag !== 'all' && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTag('all')}
+                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer border border-slate-700"
+                        >
+                          Bỏ lọc thể loại ({activeTag})
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => refetch()}
+                        className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold cursor-pointer shadow-md shadow-rose-600/30"
+                      >
+                        Tải lại danh sách phim
+                      </button>
+                    </div>
+                  </div>
                 }
               />
             </div>

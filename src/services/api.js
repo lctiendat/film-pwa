@@ -70,7 +70,7 @@ export async function fetchProviderSections(provider = '', lang = 'vi-VN', page 
 
   // Tier 2: Check IndexedDB cache
   const cached = await getSectionsCache(provKey);
-  if (cached && cached.ok) {
+  if (cached && cached.ok && Array.isArray(cached.sections) && cached.sections.length > 0) {
     return {
       ...cached,
       active_provider: cached.active_provider || provKey,
@@ -87,13 +87,8 @@ export async function fetchProviderSections(provider = '', lang = 'vi-VN', page 
     };
   }
 
-  return {
-    ok: true,
-    active_provider: provKey,
-    sections: [],
-    providers: FALLBACK_DATA.providers || [],
-    _source: 'empty',
-  };
+  // If network call failed (no cached data), throw so UI shows the retry alert instead of an empty screen
+  throw new Error(`Không thể kết nối đến máy chủ lấy dữ liệu của nhà cung cấp "${provKey}". Vui lòng bấm Thử lại.`);
 }
 
 /**
