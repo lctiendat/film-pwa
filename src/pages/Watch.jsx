@@ -424,7 +424,10 @@ export function Watch() {
 
       let hasRetriedProxy = false;
       let hasRetriedRefresh = false;
-      const isM3U8 = streamUrl.includes('.m3u8') || streamUrl.includes('m3u8') || activeEpisode.is_hls;
+      const isM3U8 = streamUrl.includes('.m3u8') ||
+        streamUrl.includes('m3u8') ||
+        streamUrl.includes('vigloo-stream') ||
+        activeEpisode.is_hls === true;
 
       if (isM3U8 && Hls.isSupported()) {
         const hls = new Hls({
@@ -505,6 +508,7 @@ export function Watch() {
         video.addEventListener('loadedmetadata', () => {
           if (!mounted) return;
           setLoadingVideo(false);
+          setStreamError(null);
           const savedTs = getSavedTimestamp(drama?.title, currentEpisodeIndex);
           if (savedTs > 5) {
             setResumePromptTime(savedTs);
@@ -525,7 +529,24 @@ export function Watch() {
         });
       } else {
         video.src = streamUrl;
-        setLoadingVideo(false);
+        video.addEventListener('loadedmetadata', () => {
+          if (!mounted) return;
+          setLoadingVideo(false);
+          setStreamError(null);
+          if (isPlaying) {
+            video.play().catch(() => {});
+          }
+        });
+        video.addEventListener('error', () => {
+          if (!hasRetriedProxy && !streamUrl.includes('/api/proxy-stream')) {
+            hasRetriedProxy = true;
+            video.src = getProxyStreamUrl(streamUrl);
+            video.play().catch(() => {});
+          } else {
+            setLoadingVideo(false);
+            setStreamError(`Không thể phát tập ${currentEpisodeNumber}.`);
+          }
+        });
       }
     }
 

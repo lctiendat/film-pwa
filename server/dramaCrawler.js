@@ -462,7 +462,12 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
       multi_subtitles: multiSubs,
       rs_ctx: contextToken || '',
       is_playable: !!(playUrl || item.direct_play_url),
-      is_hls: playUrl.includes('.m3u8') || item.browser_prefetch_mode === 'hls'
+      is_hls: playUrl.includes('.m3u8') ||
+        playUrl.includes('m3u8') ||
+        playUrl.includes('vigloo-stream') ||
+        item.browser_prefetch_mode === 'hls' ||
+        item.direct_play_is_hls === true ||
+        (Array.isArray(item.multi_resolutions) && item.multi_resolutions.length > 0)
     };
   });
 
