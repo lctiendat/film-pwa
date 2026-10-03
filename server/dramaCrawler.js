@@ -146,13 +146,24 @@ export async function fetchSections(provider = 'anyreel', page = 1, query = '', 
     lastProvidersFetch = Date.now();
   }
 
-  // Normalize posters across all items
+  // Normalize and filter items across all sections
   if (Array.isArray(data.sections)) {
     data.sections.forEach(sec => {
       if (Array.isArray(sec.items)) {
         sec.items.forEach(normalizeItem);
+        // Filter out pseudo-category banner items with missing posters and 0 content
+        sec.items = sec.items.filter(item => {
+          if (!item) return false;
+          // Items with empty posters and identical title to category/genre name are filter pills
+          if (!item.poster_url && !item.poster && !item.cover_url && !item.cover) {
+            return false;
+          }
+          return true;
+        });
       }
     });
+    // Remove empty sections
+    data.sections = data.sections.filter(sec => Array.isArray(sec.items) && sec.items.length > 0);
   }
 
   return {
@@ -348,8 +359,14 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
   }
 
   // Resilient Recovery
+  let queryTitle = '';
+  try {
+    const parsedWatch = new URL(watchUrl.startsWith('http') ? watchUrl : `${BASE_URL}${watchUrl}`);
+    queryTitle = parsedWatch.searchParams.get('title') || '';
+  } catch (e) {}
+
   const hasPlayableStream = episodes.some(e => (e.play_url || e.direct_play_url));
-  if (!hasPlayableStream && episodes.length > 0) {
+  if (!hasPlayableStream) {
     console.log(`[DramaCrawler] 0 playable episodes found for ${watchUrl}. Attempting resilient recovery...`);
     let recoveredEps = null;
 
@@ -375,34 +392,41 @@ export async function resolveDrama({ watch_url, slug, ep = '1', lang = 'vi-VN' }
       }
     }
 
-    // Strategy 2: Search upstream by drama title and find an alternate working entry
-    if (!recoveredEps && title) {
-      try {
-        const cleanSearchTitle = title.replace(/\s*-\s*Free Streaming.*$/i, '').trim();
-        const searchRes = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(cleanSearchTitle)}&limit=10&lang=${encodeURIComponent(lang)}`, {
-          headers: getHeaders({ 'X-Requested-With': 'XMLHttpRequest' })
-        });
-        if (searchRes.ok) {
-          const sData = await searchRes.json();
-          const sItems = sData.items || sData || [];
-          const altItem = sItems.find(i => i.url && i.url !== watchUrl && !i.url.includes(watchUrl.split('?')[0]) && i.title && i.title.toLowerCase().trim() === cleanSearchTitle.toLowerCase().trim());
-          if (altItem && altItem.url) {
-            const altPath = altItem.url.split('?')[0];
-            const altUrl = `${BASE_URL}${altPath}/1`;
-            const altRes = await fetch(altUrl, { headers });
-            const altHtml = await altRes.text();
-            const altMatch = altHtml.match(/const episodeItemsRaw = (\[[\s\S]*?\]);/);
-            if (altMatch) {
-              const parsed = JSON.parse(altMatch[1]);
-              if (parsed.some(e => e.play_url || e.direct_play_url)) {
-                recoveredEps = parsed;
-                console.log(`[DramaCrawler] Successfully recovered ${parsed.length} playable episodes via title search!`);
+    // Strategy 2: Search upstream by drama title or query title and find an alternate working entry
+    const searchCandidates = [title, queryTitle].filter(Boolean).map(t => t.replace(/\s*-\s*Free Streaming.*$/i, '').trim());
+    if (!recoveredEps && searchCandidates.length > 0) {
+      for (const cand of searchCandidates) {
+        if (recoveredEps) break;
+        try {
+          const searchRes = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(cand)}&limit=10&lang=${encodeURIComponent(lang)}`, {
+            headers: getHeaders({ 'X-Requested-With': 'XMLHttpRequest' })
+          });
+          if (searchRes.ok) {
+            const sData = await searchRes.json();
+            const sItems = sData.items || sData || [];
+            // Try matching either exact or closest match
+            const sortedItems = sItems.filter(i => i.url && i.url !== watchUrl && !i.url.includes(watchUrl.split('?')[0]));
+            for (const altItem of sortedItems.slice(0, 3)) {
+              const altPath = altItem.url.split('?')[0];
+              const altUrl = `${BASE_URL}${altPath}/1`;
+              const altRes = await fetch(altUrl, { headers });
+              const altHtml = await altRes.text();
+              const altMatch = altHtml.match(/const episodeItemsRaw = (\[[\s\S]*?\]);/);
+              if (altMatch) {
+                const parsed = JSON.parse(altMatch[1]);
+                if (parsed.some(e => e.play_url || e.direct_play_url)) {
+                  recoveredEps = parsed;
+                  if (!title && altItem.title) title = altItem.title;
+                  if (!poster && altItem.poster_url) poster = altItem.poster_url;
+                  console.log(`[DramaCrawler] Successfully recovered ${parsed.length} playable episodes via search "${cand}" -> "${altItem.title}"!`);
+                  break;
+                }
               }
             }
           }
+        } catch (e) {
+          console.error('[DramaCrawler] Strategy 2 failed for candidate:', cand, e.message);
         }
-      } catch (e) {
-        console.error('[DramaCrawler] Strategy 2 failed:', e.message);
       }
     }
 
