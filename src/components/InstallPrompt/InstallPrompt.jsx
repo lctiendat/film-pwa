@@ -28,48 +28,33 @@ export function InstallPrompt() {
 
   return (
     <>
-      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-3 pb-1">
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-rose-900/40 via-purple-900/30 to-slate-900/60 p-4 border border-rose-500/20 shadow-xl backdrop-blur-md">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-rose-600 to-indigo-600 shadow-md shadow-rose-500/20 text-white font-bold text-xl">
-                🎬
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="font-semibold text-white text-base">Cài đặt FilmDrama App</h4>
-                  <span className="inline-flex items-center rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-400 border border-rose-500/20">
-                    PWA
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 mt-0.5 flex flex-wrap items-center gap-3">
-                  <span className="flex items-center gap-1"><ThunderboltOutlined className="text-amber-400" /> Tốc độ siêu tốc</span>
-                  <span className="flex items-center gap-1"><CheckCircleOutlined className="text-emerald-400" /> Xem ngoại tuyến</span>
-                  <span className="flex items-center gap-1"><MobileOutlined className="text-cyan-400" /> Không tốn dung lượng</span>
-                </p>
-              </div>
-            </div>
+      <div className="fixed bottom-4 left-4 right-4 z-[100] md:hidden">
+        <div className="relative mx-auto max-w-md overflow-hidden rounded-[24px] bg-slate-900/95 p-3 border border-rose-500/30 shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-fade-in-up">
+          <button
+            onClick={() => setDismissed(true)}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Đóng"
+          >
+            <CloseOutlined className="text-xs" />
+          </button>
 
-            <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
-              <Button
-                type="text"
-                size="small"
-                onClick={() => setDismissed(true)}
-                className="text-slate-400 hover:text-white"
-              >
-                Để sau
-              </Button>
-              <Button
-                type="primary"
-                icon={<DownloadOutlined />}
-                loading={isInstalling}
-                onClick={handleInstall}
-                className="font-medium !h-9 px-4 rounded-xl shadow-lg shadow-rose-600/30 bg-rose-600 hover:bg-rose-500 border-none text-white cursor-pointer"
-              >
-                {isIOS ? 'Cách cài đặt trên iPhone' : 'Cài đặt ứng dụng'}
-              </Button>
-            </div>
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-gradient-to-tr from-rose-600 to-indigo-600 shadow-lg shadow-rose-500/30 text-white text-xl border border-white/10">
+            🎬
           </div>
+          
+          <div className="flex-1 min-w-0">
+            <h4 className="font-extrabold text-white text-[13px] sm:text-sm truncate leading-tight mb-0.5">FilmDrama App</h4>
+            <p className="text-[10px] sm:text-[11px] text-slate-300 font-medium truncate leading-tight">Siêu mượt • Lưu ngoại tuyến</p>
+          </div>
+          
+          <Button
+            type="primary"
+            loading={isInstalling}
+            onClick={handleInstall}
+            className="font-bold h-9 px-4 rounded-xl shadow-lg shadow-rose-600/40 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 border-none text-white text-[11px] sm:text-xs shrink-0 cursor-pointer"
+          >
+            {isIOS ? 'H.Dẫn Cài' : 'Cài Đặt'}
+          </Button>
         </div>
       </div>
 
