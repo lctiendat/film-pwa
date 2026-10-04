@@ -82,8 +82,10 @@ export function Watch() {
   const [duration, setDuration] = useState(0);
 
   const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const hlsRef = useRef(null);
   const playerContainerRef = useRef(null);
+  const [showCanvas, setShowCanvas] = useState(false);
 
   // Auto-scroll focus to player on mobile upon mounting or changing drama/episode
   const scrollToPlayerOnMobile = () => {
@@ -461,7 +463,9 @@ export function Watch() {
           }
 
           if (isPlaying) {
-            video.play().catch(() => {});
+            video.play().then(() => setShowCanvas(false)).catch(() => setShowCanvas(false));
+          } else {
+            setShowCanvas(false);
           }
         });
 
@@ -514,7 +518,9 @@ export function Watch() {
             setResumePromptTime(savedTs);
           }
           if (isPlaying) {
-            video.play().catch(() => {});
+            video.play().then(() => setShowCanvas(false)).catch(() => setShowCanvas(false));
+          } else {
+            setShowCanvas(false);
           }
         });
         video.addEventListener('error', () => {
@@ -534,7 +540,9 @@ export function Watch() {
           setLoadingVideo(false);
           setStreamError(null);
           if (isPlaying) {
-            video.play().catch(() => {});
+            video.play().then(() => setShowCanvas(false)).catch(() => setShowCanvas(false));
+          } else {
+            setShowCanvas(false);
           }
         });
         video.addEventListener('error', () => {
@@ -587,6 +595,20 @@ export function Watch() {
 
   const handleSelectEpisode = (index) => {
     if (index < 0 || index >= episodes.length) return;
+
+    // Capture current frame for seamless visual transition
+    if (videoRef.current && canvasRef.current && isPlaying) {
+      try {
+        const ctx = canvasRef.current.getContext('2d');
+        canvasRef.current.width = videoRef.current.videoWidth || 440;
+        canvasRef.current.height = videoRef.current.videoHeight || 780;
+        ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+        setShowCanvas(true);
+      } catch (e) {
+        console.warn('Canvas capture failed', e);
+      }
+    }
+
     setCurrentEpisodeIndex(index);
     setIsPlaying(true);
     scrollToPlayerOnMobile();
@@ -789,13 +811,19 @@ export function Watch() {
             {/* Ambient Backlight Glow behind player */}
             <div className="absolute -inset-1 rounded-3xl bg-gradient-to-tr from-rose-600/20 via-transparent to-indigo-600/20 opacity-50 blur-xl pointer-events-none" />
 
+            {/* Seamless Transition Canvas Overlay */}
+            <canvas
+              ref={canvasRef}
+              className={`absolute inset-0 w-full h-full object-contain bg-black pointer-events-none transition-opacity duration-300 ${showCanvas ? 'opacity-100 z-20' : 'opacity-0 -z-10'}`}
+            />
+
             {/* HTML5 Video Element with HLS stream */}
             <video
               ref={videoRef}
               playsInline
               preload="metadata"
               poster={poster}
-              controls={isPlaying}
+              controls={isPlaying && !showCanvas}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               onTimeUpdate={(e) => {
@@ -867,9 +895,8 @@ export function Watch() {
 
             {/* Loading Indicator */}
             {loadingVideo && !streamError && (
-              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none">
-                <div className="h-10 w-10 animate-spin rounded-full border-4 border-rose-500 border-t-transparent mb-2" />
-                <span className="text-xs text-slate-300 font-medium">Đang chuyển tập {currentEpisodeNumber}...</span>
+              <div className="absolute top-4 right-4 z-30 flex items-center justify-center pointer-events-none drop-shadow-md">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-rose-500 border-t-transparent shadow-lg" />
               </div>
             )}
 
