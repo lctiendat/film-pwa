@@ -28,8 +28,8 @@ export function InstallPrompt() {
 
   return (
     <>
-      <div className="fixed bottom-4 left-4 right-4 z-[100] md:hidden">
-        <div className="relative mx-auto max-w-md overflow-hidden rounded-[24px] bg-slate-900/95 p-3 border border-rose-500/30 shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-fade-in-up">
+      <div className="fixed bottom-24 left-4 right-4 z-[100] md:hidden">
+        <div className="relative mx-auto max-w-md overflow-hidden rounded-[24px] bg-slate-900/95 p-3 border border-rose-500/30 shadow-[0_0_30px_rgba(225,29,72,0.15)] backdrop-blur-xl flex items-center gap-3 animate-fade-in-up">
           <button
             onClick={() => setDismissed(true)}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
@@ -38,7 +38,7 @@ export function InstallPrompt() {
             <CloseOutlined className="text-xs" />
           </button>
 
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-gradient-to-tr from-rose-600 to-indigo-600 shadow-lg shadow-rose-500/30 text-white text-xl border border-white/10">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-rose-600 shadow-lg shadow-rose-500/30 text-white text-xl border border-white/10">
             🎬
           </div>
           
@@ -51,7 +51,7 @@ export function InstallPrompt() {
             type="primary"
             loading={isInstalling}
             onClick={handleInstall}
-            className="font-bold h-9 px-4 rounded-xl shadow-lg shadow-rose-600/40 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 border-none text-white text-[11px] sm:text-xs shrink-0 cursor-pointer"
+            className="font-bold h-9 px-4 rounded-xl shadow-lg shadow-rose-600/40 bg-rose-600 hover:bg-rose-500 border-none text-white text-[11px] sm:text-xs shrink-0 cursor-pointer"
           >
             {isIOS ? 'H.Dẫn Cài' : 'Cài Đặt'}
           </Button>

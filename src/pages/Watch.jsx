@@ -579,6 +579,12 @@ export function Watch() {
     } else {
       video.play().then(() => {
         setIsPlaying(true);
+        // Tự động mở toàn màn hình khi bấm Play
+        if (video.requestFullscreen) {
+          video.requestFullscreen().catch(() => {});
+        } else if (video.webkitRequestFullscreen) {
+          video.webkitRequestFullscreen();
+        }
       }).catch((err) => {
         console.warn('Playback request error:', err);
         // Fallback for strict browser autoplay policy: mute and play
@@ -586,6 +592,12 @@ export function Watch() {
         video.play().then(() => {
           setIsPlaying(true);
           message.info('Video đang phát (đã tắt tiếng). Bạn có thể bật tiếng trên thanh điều khiển.');
+          // Thử mở toàn màn hình cho fallback
+          if (video.requestFullscreen) {
+            video.requestFullscreen().catch(() => {});
+          } else if (video.webkitRequestFullscreen) {
+            video.webkitRequestFullscreen();
+          }
         }).catch(() => {
           setIsPlaying(true);
         });
@@ -614,7 +626,13 @@ export function Watch() {
     scrollToPlayerOnMobile();
     setTimeout(() => {
       if (videoRef.current) {
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play().then(() => {
+           if (videoRef.current.requestFullscreen) {
+             videoRef.current.requestFullscreen().catch(() => {});
+           } else if (videoRef.current.webkitRequestFullscreen) {
+             videoRef.current.webkitRequestFullscreen();
+           }
+        }).catch(() => {});
       }
     }, 120);
   };
@@ -807,9 +825,9 @@ export function Watch() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Short Drama Player */}
         <div ref={playerContainerRef} className="lg:col-span-8 flex flex-col items-center scroll-mt-4 w-full">
-          <div className="relative w-full max-w-[440px] aspect-[9/16] max-h-[78vh] rounded-3xl overflow-hidden bg-black border-2 border-slate-800/90 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)] flex items-center justify-center group ring-1 ring-white/10">
+          <div className="relative w-full max-w-[340px] sm:max-w-[440px] aspect-[9/16] max-h-[70vh] sm:max-h-[78vh] rounded-[24px] sm:rounded-3xl overflow-hidden bg-black border-2 border-slate-800/90 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)] flex items-center justify-center group ring-1 ring-white/10">
             {/* Ambient Backlight Glow behind player */}
-            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-tr from-rose-600/20 via-transparent to-indigo-600/20 opacity-50 blur-xl pointer-events-none" />
+            <div className="absolute -inset-1 rounded-3xl bg-rose-600/20 opacity-50 blur-xl pointer-events-none" />
 
             {/* Seamless Transition Canvas Overlay */}
             <canvas
@@ -1072,7 +1090,7 @@ export function Watch() {
                 <span className="mt-3 text-xs text-slate-400 font-medium">Đang tải danh sách tập...</span>
               </div>
             ) : (
-              <div className="max-h-[380px] overflow-y-auto pr-1 grid grid-cols-5 gap-2 scrollbar-thin">
+              <div className="max-h-[380px] overflow-y-auto pr-1 grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-2.5 scrollbar-thin">
                 {(episodes.length > BATCH_SIZE
                   ? episodes.slice(activeBatchIndex * BATCH_SIZE, (activeBatchIndex + 1) * BATCH_SIZE)
                   : episodes
@@ -1086,7 +1104,7 @@ export function Watch() {
                       onClick={() => handleSelectEpisode(idx)}
                       className={`h-11 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex flex-col items-center justify-center ${
                         isActive
-                          ? 'bg-gradient-to-tr from-rose-600 to-rose-500 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 transform scale-105'
+                          ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 transform scale-105'
                           : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800/80 hover:border-slate-700'
                       }`}
                     >
