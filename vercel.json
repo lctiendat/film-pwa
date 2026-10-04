@@ -1,0 +1,27 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Range, Authorization" }
+      ]
+    }
+  ],
+  "functions": {
+    "api/drama.js": { "maxDuration": 30 },
+    "api/episode/refresh.js": { "maxDuration": 30 },
+    "api/proxy-stream.js": { "maxDuration": 30 },
+    "api/translate.js": { "maxDuration": 30 },
+    "api/subtitle/translate.js": { "maxDuration": 30 },
+    "api/subtitle/auto-generate.js": { "maxDuration": 30 }
+  }
+}
