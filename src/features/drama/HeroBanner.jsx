@@ -56,7 +56,7 @@ export function HeroBanner({ drama }) {
         <div className="lg:col-span-8 flex flex-col items-start">
           {/* Top Trendy Pills */}
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-rose-600/30 to-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold uppercase tracking-wider shadow-sm">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-600/20 border border-rose-500/40 text-rose-300 text-xs font-bold uppercase tracking-wider shadow-sm">
               <FireFilled className="text-rose-500 animate-pulse" /> #1 THỊNH HÀNH HÔM NAY
             </div>
 
@@ -101,7 +101,7 @@ export function HeroBanner({ drama }) {
                 type="primary"
                 size="large"
                 icon={<PlayCircleFilled />}
-                className="!h-13 px-8 rounded-2xl font-bold text-base shadow-xl shadow-rose-600/40 bg-gradient-to-r from-rose-600 via-rose-500 to-rose-600 hover:from-rose-500 hover:to-rose-400 border-none text-white flex items-center gap-2 cursor-pointer transform hover:scale-105 active:scale-95 transition-all duration-200"
+                className="!h-13 px-8 rounded-2xl font-bold text-base shadow-xl shadow-rose-600/40 bg-rose-600 hover:bg-rose-500 border-none text-white flex items-center gap-2 cursor-pointer transform hover:scale-105 active:scale-95 transition-all duration-200"
               >
                 Xem Ngay Tập 1
               </Button>

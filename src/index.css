@@ -18,7 +18,12 @@
     overflow-x: hidden;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-heading);
     letter-spacing: -0.02em;
   }
@@ -29,13 +34,16 @@
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #07090e;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #1e293b;
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #e11d48;
 }
@@ -116,8 +124,17 @@
 
 /* Animations */
 @keyframes pulseSubtle {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.85; transform: scale(1.03); }
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.85;
+    transform: scale(1.03);
+  }
 }
 
 .animate-pulse-subtle {
@@ -149,4 +166,3 @@
   border-color: rgba(244, 63, 94, 0.4) !important;
   color: #fff !important;
 }
-

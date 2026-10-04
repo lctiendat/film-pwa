@@ -953,8 +953,8 @@ export function Watch() {
             )}
           </div>
 
-          {/* Full Movie Timeline Scrubber (When Full Movie Mode is ON) */}
-          {isFullMovieMode && (
+          {/* Full Movie Timeline Scrubber (Hidden per user request: "ẩn cái này cho tôi") */}
+          {false && isFullMovieMode && (
             <div className="w-full max-w-[440px] mt-3.5 p-3.5 rounded-2xl glass-panel border border-slate-800/90 shadow-xl">
               <div className="flex items-center justify-between text-[11px] text-slate-300 mb-2 font-mono">
                 <span className="text-rose-400 font-bold flex items-center gap-1.5">
