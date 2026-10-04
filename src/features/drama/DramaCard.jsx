@@ -61,8 +61,8 @@ export function DramaCard({ drama }) {
           className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
         />
 
-        {/* Gradient dark overlays */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#07090e] via-transparent to-black/30 opacity-90 group-hover:opacity-60 transition-opacity" />
+        {/* Dark overlays */}
+        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors" />
 
         {/* Top Badges */}
         <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between z-10 pointer-events-none">
