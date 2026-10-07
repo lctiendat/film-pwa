@@ -5,6 +5,7 @@ import {
   PlayCircleFilled,
   HeartFilled,
   HomeFilled,
+  SearchOutlined,
   DownloadOutlined,
   WifiOutlined,
   DisconnectOutlined,
@@ -31,6 +32,7 @@ export function Navbar() {
 
   const navLinks = [
     { path: '/', label: 'Trang Chủ', icon: <HomeFilled /> },
+    { path: '/search', label: 'Tìm Kiếm', icon: <SearchOutlined /> },
     {
       path: '/favorites',
       label: 'Kho Phim',
@@ -150,11 +152,11 @@ export function Navbar() {
       </header>
 
       {/* Mobile Bottom Navigation Bar (True PWA Mobile Experience) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090e]/95 border-t border-slate-800/80 backdrop-blur-2xl px-6 py-2 shadow-2xl pb-safe">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090e]/95 border-t border-slate-800/80 backdrop-blur-2xl px-4 py-2 shadow-2xl pb-safe">
         <div className="flex items-center justify-around">
           <Link
             to="/"
-            className={`flex flex-col items-center py-1 px-4 text-[11px] font-semibold transition-all ${location.pathname === '/' ? 'text-rose-500 scale-105' : 'text-slate-400 hover:text-slate-200'
+            className={`flex flex-col items-center py-1 px-3 text-[11px] font-semibold transition-all ${location.pathname === '/' ? 'text-rose-500 scale-105' : 'text-slate-400 hover:text-slate-200'
               }`}
           >
             <HomeFilled className="text-xl mb-1" />
@@ -162,14 +164,23 @@ export function Navbar() {
           </Link>
 
           <Link
+            to="/search"
+            className={`flex flex-col items-center py-1 px-3 text-[11px] font-semibold transition-all ${location.pathname === '/search' ? 'text-rose-500 scale-105' : 'text-slate-400 hover:text-slate-200'
+              }`}
+          >
+            <SearchOutlined className="text-xl mb-1" />
+            <span>Tìm Kiếm</span>
+          </Link>
+
+          <Link
             to="/favorites"
-            className={`flex flex-col items-center py-1 px-4 text-[11px] font-semibold transition-all relative ${location.pathname === '/favorites' ? 'text-rose-500 scale-105' : 'text-slate-400 hover:text-slate-200'
+            className={`flex flex-col items-center py-1 px-3 text-[11px] font-semibold transition-all relative ${location.pathname === '/favorites' ? 'text-rose-500 scale-105' : 'text-slate-400 hover:text-slate-200'
               }`}
           >
             <HeartFilled className="text-xl mb-1" />
             <span>Kho Phim</span>
             {favoritesCount > 0 && (
-              <span className="absolute top-0 right-3 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-extrabold text-white shadow-md shadow-rose-600/50">
+              <span className="absolute top-0 right-2 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-extrabold text-white shadow-md shadow-rose-600/50">
                 {favoritesCount}
               </span>
             )}

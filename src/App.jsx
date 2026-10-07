@@ -10,6 +10,7 @@ import { Home } from './pages/Home';
 import { Watch } from './pages/Watch';
 import { Favorites } from './pages/Favorites';
 import { Offline } from './pages/Offline';
+import { Search } from './pages/Search';
 
 export function App() {
   return (
@@ -58,6 +59,7 @@ export function App() {
         <main className="flex-1">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/search" element={<Search />} />
             <Route path="/watch/:bookId" element={<Watch />} />
             <Route path="/favorites" element={<Favorites />} />
             <Route path="/offline" element={<Offline />} />

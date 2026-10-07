@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Spin, Alert, Empty } from 'antd';
 import { LoadingOutlined, CheckCircleOutlined, CloudSyncOutlined, DatabaseOutlined, SyncOutlined } from '@ant-design/icons';
-import { fetchProviderSections } from '../services/api';
+import { fetchProviderSections, searchDramas } from '../services/api';
 import { useDramaStore } from '../store/useDramaStore';
 import { FALLBACK_DATA } from '../services/fallbackData';
 import { HeroBanner } from '../features/drama/HeroBanner';
@@ -73,22 +73,44 @@ export function Home() {
   const hotSection = sections.find((s) => s.tab_label?.toLowerCase().includes('hot')) || sections[0];
   const featuredHero = hotSection?.items?.[0] || null;
 
-  // Global search filtering across all sections if searchQuery is active
-  const isSearchActive = Boolean(searchQuery && searchQuery.trim().length > 0);
-  
+  // Live Server Search Query when searchQuery is active
+  const trimmedSearchQuery = (searchQuery || '').trim();
+  const isSearchActive = Boolean(trimmedSearchQuery.length > 0);
+
+  const {
+    data: serverSearchResults,
+    isLoading: isSearching,
+  } = useQuery({
+    queryKey: ['search-dramas-home', trimmedSearchQuery],
+    queryFn: () => searchDramas(trimmedSearchQuery, 'vi-VN'),
+    enabled: isSearchActive,
+    staleTime: 3 * 60 * 1000,
+  });
+
   let allSearchItems = [];
   if (isSearchActive) {
-    const q = searchQuery.toLowerCase().trim();
     const seen = new Set();
+    if (Array.isArray(serverSearchResults)) {
+      serverSearchResults.forEach((item) => {
+        const id = item.book_id || item.id;
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          allSearchItems.push(item);
+        }
+      });
+    }
+
+    const qLower = trimmedSearchQuery.toLowerCase();
     sections.forEach((sec) => {
       sec.items?.forEach((item) => {
-        if (!seen.has(item.book_id)) {
-          const matchTitle = item.title?.toLowerCase().includes(q);
-          const matchDesc = item.description?.toLowerCase().includes(q);
-          const matchTags = item.tag_names?.some((t) => t.toLowerCase().includes(q));
-          const matchCat = item.category_name?.toLowerCase().includes(q);
+        const id = item.book_id || item.id;
+        if (id && !seen.has(id)) {
+          const matchTitle = item.title?.toLowerCase().includes(qLower);
+          const matchDesc = item.description?.toLowerCase().includes(qLower);
+          const matchTags = item.tag_names?.some((t) => t.toLowerCase().includes(qLower));
+          const matchCat = item.category_name?.toLowerCase().includes(qLower);
           if (matchTitle || matchDesc || matchTags || matchCat) {
-            seen.add(item.book_id);
+            seen.add(id);
             allSearchItems.push(item);
           }
         }
@@ -203,29 +225,58 @@ export function Home() {
       ) : isSearchActive ? (
         /* Search Results View */
         <div className="my-6">
-          <div className="flex items-center justify-between mb-6 pb-2 border-b border-slate-800">
-            <h2 className="text-xl font-bold text-white font-display">
-              Kết quả tìm kiếm cho "{searchQuery}"
-            </h2>
-            <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-rose-400 font-semibold">
-              Tìm thấy {allSearchItems.length} phim
-            </span>
+          <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-800">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white font-display flex items-center gap-2">
+                <span>Kết quả tìm kiếm:</span>
+                <span className="text-rose-400 italic">"{trimmedSearchQuery}"</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Dữ liệu tìm kiếm trực tuyến toàn bộ kho phim
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-rose-500/15 border border-rose-500/30 px-3.5 py-1 text-xs text-rose-300 font-bold">
+                {isSearching ? 'Đang tìm kiếm...' : `Tìm thấy ${allSearchItems.length} phim`}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                ✕ Đóng
+              </button>
+            </div>
           </div>
 
-          {allSearchItems.length === 0 ? (
+          {isSearching ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Spin indicator={<LoadingOutlined style={{ fontSize: 36, color: '#e11d48' }} spin />} />
+              <span className="mt-4 text-sm text-slate-300 font-medium animate-pulse">
+                Đang tìm phim "{trimmedSearchQuery}" trên máy chủ...
+              </span>
+            </div>
+          ) : allSearchItems.length === 0 ? (
             <div className="py-16 text-center">
               <Empty
                 description={
-                  <span className="text-slate-400">
-                    Không tìm thấy phim phù hợp với từ khóa "{searchQuery}". Thử từ khóa khác xem sao!
-                  </span>
+                  <div className="flex flex-col items-center gap-2 text-slate-400">
+                    <span>Không tìm thấy phim phù hợp với từ khóa "{trimmedSearchQuery}".</span>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="mt-2 px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
+                    >
+                      Xóa tìm kiếm
+                    </button>
+                  </div>
                 }
               />
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-4 sm:gap-6">
-              {allSearchItems.map((item) => (
-                <DramaCard key={item.book_id} drama={item} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-5">
+              {allSearchItems.map((item, idx) => (
+                <DramaCard key={item.book_id || item.id || idx} drama={item} />
               ))}
             </div>
           )}

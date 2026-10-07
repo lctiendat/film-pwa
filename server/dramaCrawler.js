@@ -58,10 +58,17 @@ export function normalizePosterUrl(url) {
 
 export function normalizeItem(item) {
   if (!item || typeof item !== 'object') return item;
+  if (!item.book_id && item.id) item.book_id = item.id;
+  if (!item.id && item.book_id) item.id = item.book_id;
+  if (!item.watch_url && item.url) item.watch_url = item.url;
+  if (!item.url && item.watch_url) item.url = item.watch_url;
+  if (!item.tag_names && Array.isArray(item.tags)) item.tag_names = item.tags;
+  if (!item.tags && Array.isArray(item.tag_names)) item.tags = item.tag_names;
   if (item.poster_url) item.poster_url = normalizePosterUrl(item.poster_url);
   if (item.cover_url) item.cover_url = normalizePosterUrl(item.cover_url);
   if (item.cover) item.cover = normalizePosterUrl(item.cover);
   if (item.poster) item.poster = normalizePosterUrl(item.poster);
+  if (!item.poster_url) item.poster_url = item.cover_url || item.cover || item.poster || '';
   return item;
 }
 
@@ -178,21 +185,49 @@ export async function fetchSections(provider = 'anyreel', page = 1, query = '', 
 
 // 3. Search API
 export async function searchDramas(query = '', lang = 'vi-VN') {
-  if (!query.trim()) {
+  const q = (query || '').trim();
+  if (!q) {
     return { ok: true, items: [] };
   }
 
-  const url = `${BASE_URL}/search?q=${encodeURIComponent(query)}&limit=50&lang=${encodeURIComponent(lang)}`;
-  const response = await fetch(url, {
-    headers: getHeaders({ 'X-Requested-With': 'XMLHttpRequest' })
-  });
-
-  if (!response.ok) {
-    return { ok: false, error: `Upstream search error: ${response.status}`, items: [] };
+  async function fetchSearch(targetLang) {
+    try {
+      const url = `${BASE_URL}/search?q=${encodeURIComponent(q)}&limit=50&lang=${encodeURIComponent(targetLang)}`;
+      const response = await fetch(url, {
+        headers: getHeaders({ 'X-Requested-With': 'XMLHttpRequest' }),
+        signal: AbortSignal.timeout(9000),
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
+    } catch {
+      return null;
+    }
   }
 
-  const data = await response.json();
-  const rawItems = data.items || data || [];
+  // Primary search with requested lang
+  let rawItems = await fetchSearch(lang);
+
+  // Fallback 1: If 0 items or null and requested lang was not id-ID, try id-ID
+  if ((!rawItems || rawItems.length === 0) && lang !== 'id-ID') {
+    const fallbackItems = await fetchSearch('id-ID');
+    if (fallbackItems && fallbackItems.length > 0) {
+      rawItems = fallbackItems;
+    }
+  }
+
+  // Fallback 2: If still 0 items, try en-US
+  if ((!rawItems || rawItems.length === 0) && lang !== 'en-US') {
+    const fbEn = await fetchSearch('en-US');
+    if (fbEn && fbEn.length > 0) {
+      rawItems = fbEn;
+    }
+  }
+
+  if (!rawItems) {
+    return { ok: false, error: 'Upstream search error', items: [] };
+  }
+
   const items = rawItems.map(normalizeItem);
   return { ok: true, items };
 }

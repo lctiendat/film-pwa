@@ -11,13 +11,15 @@ export function DramaCard({ drama }) {
   const [imgError, setImgError] = useState(false);
   const { refreshCounts } = useDramaStore();
 
-  const bookId = drama.book_id;
+  const bookId = drama.book_id || drama.id;
 
   useEffect(() => {
     let mounted = true;
-    isFavorite(bookId).then((fav) => {
-      if (mounted) setBookmarked(fav);
-    });
+    if (bookId) {
+      isFavorite(bookId).then((fav) => {
+        if (mounted) setBookmarked(fav);
+      });
+    }
     return () => {
       mounted = false;
     };
@@ -27,12 +29,14 @@ export function DramaCard({ drama }) {
     e.preventDefault();
     e.stopPropagation();
 
+    if (!bookId) return;
+
     if (bookmarked) {
       await removeFavorite(bookId);
       setBookmarked(false);
       message.info('Đã xóa khỏi danh sách yêu thích');
     } else {
-      await saveFavorite(drama);
+      await saveFavorite({ ...drama, book_id: bookId });
       setBookmarked(true);
       message.success('Đã lưu vào danh sách xem offline');
     }
@@ -41,9 +45,10 @@ export function DramaCard({ drama }) {
 
   const posterSrc = imgError
     ? 'https://images.unsplash.com/photo-1518676590629-3dcbd9c5a5c9?w=600&auto=format&fit=crop&q=80'
-    : getPosterUrl(drama.poster_url);
+    : getPosterUrl(drama.poster_url || drama.cover_url || drama.poster || drama.cover);
 
-  const watchTarget = `/watch/${drama.book_id}?provider=${encodeURIComponent(drama.category_name || '')}&watch=${encodeURIComponent(drama.watch_url || '')}&title=${encodeURIComponent(drama.title || '')}`;
+  const watchUrl = drama.watch_url || drama.url || '';
+  const watchTarget = `/watch/${bookId}?provider=${encodeURIComponent(drama.category_name || '')}&watch=${encodeURIComponent(watchUrl)}&title=${encodeURIComponent(drama.title || '')}`;
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-2xl glass-card transition-all duration-300">

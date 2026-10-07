@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { SearchOutlined, CloseCircleOutlined, FilterOutlined } from '@ant-design/icons';
@@ -9,9 +10,11 @@ const searchSchema = z.object({
   query: z.string().trim().max(60, 'Từ khóa không được vượt quá 60 ký tự'),
 });
 
-const QUICK_TAGS = ['Tất cả', 'Revenge', 'Werewolf', 'Dragon', 'Billionaire', 'Vampire', 'Forbidden Love', 'Erotic', 'Young Adult'];
+const QUICK_TAGS = ['Tất cả', 'Chạy Về Nơi Phía Anh', 'Vợ Thiếu Soái', 'Hoàng Đế', 'Revenge', 'Werewolf', 'Billionaire', 'Romance'];
 
 export function SearchBar() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { searchQuery, setSearchQuery, activeTag, setActiveTag } = useDramaStore();
 
   const {
@@ -32,7 +35,11 @@ export function SearchBar() {
     // Validate with zod
     const validation = searchSchema.safeParse(formData);
     if (validation.success) {
-      setSearchQuery(validation.data.query);
+      const q = validation.data.query;
+      setSearchQuery(q);
+      if (q) {
+        navigate(`/search?q=${encodeURIComponent(q)}`);
+      }
     }
   };
 
@@ -44,6 +51,10 @@ export function SearchBar() {
   const handleTagClick = (tag) => {
     if (tag === 'Tất cả' || activeTag === tag) {
       setActiveTag('all');
+    } else if (['Chạy Về Nơi Phía Anh', 'Vợ Thiếu Soái', 'Hoàng Đế'].includes(tag)) {
+      setValue('query', tag);
+      setSearchQuery(tag);
+      navigate(`/search?q=${encodeURIComponent(tag)}`);
     } else {
       setActiveTag(tag);
     }
