@@ -75,11 +75,12 @@ const server = http.createServer(async (req, res) => {
   // 3. Sections
   if (pathname === '/api/sections') {
     try {
-      const provider = urlObj.searchParams.get('provider') || 'anyreel';
+      const provider = urlObj.searchParams.get('provider') || urlObj.searchParams.get('tab-provider') || 'anyreel';
       const page = parseInt(urlObj.searchParams.get('page') || '1', 10);
       const q = urlObj.searchParams.get('q') || '';
       const lang = urlObj.searchParams.get('lang') || 'vi-VN';
-      const data = await fetchSections(provider, page, q, lang);
+      const onlyTab = urlObj.searchParams.get('only_tab') || '';
+      const data = await fetchSections(provider, page, q, lang, onlyTab);
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(data));
     } catch (e) {

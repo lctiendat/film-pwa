@@ -72,8 +72,33 @@ export function normalizeItem(item) {
   return item;
 }
 
-// 2. Sections Fetcher with Resilient Multilingual Fallback Chain
-export async function fetchSections(provider = 'anyreel', page = 1, query = '', lang = 'vi-VN') {
+// Provider known tab keys cache for pagination sync
+const providerTabKeysCache = new Map([
+  ['anyreel', ['69282da3714939d2c3283284', '692911e83d402563e802a61c', '692911e83d402563e802a61e', '692912f4714939d2c3283553']],
+  ['meloshort', ['69282da3714939d2c3283284', '692911e83d402563e802a61c', '692911e83d402563e802a61e', '692912f4714939d2c3283553']],
+  ['dramabox', ['home', 'latest', 'rank']],
+  ['netshort', ['home', 'list']],
+  ['flickreels', ['405:1', '78:1', '834:2', '88:1', '684:1']],
+  ['goodshort', ['home', 'hot']],
+]);
+
+// 2. Sections Fetcher with Resilient Multilingual Fallback Chain & Pagination
+export async function fetchSections(provider = 'anyreel', page = 1, query = '', lang = 'vi-VN', onlyTab = '') {
+  const normProvider = (provider || 'anyreel').toLowerCase();
+
+  // If page > 1 and we do NOT know tab keys for this provider yet, fetch page 1 first to discover tab keys
+  if (page > 1 && !query && !onlyTab && !providerTabKeysCache.has(normProvider)) {
+    try {
+      const p1 = await fetchSections(normProvider, 1, '', lang, '');
+      if (p1 && Array.isArray(p1.sections)) {
+        const keys = p1.sections.map(s => s.tab_key).filter(Boolean);
+        if (keys.length > 0) {
+          providerTabKeysCache.set(normProvider, keys);
+        }
+      }
+    } catch (_) {}
+  }
+
   async function fetchSectionsFromUpstream(targetLang, useTargetFilter = true) {
     try {
       const params = new URLSearchParams();
@@ -86,9 +111,14 @@ export async function fetchSections(provider = 'anyreel', page = 1, query = '', 
       }
       if (query) {
         params.set('q', query);
+      } else if (onlyTab) {
+        params.set('only_tab', onlyTab);
+        params.set(`tab_pages[${onlyTab}]`, String(page));
       } else if (page > 1) {
+        const knownKeys = providerTabKeysCache.get(normProvider) || [];
         const commonTabs = ['home', 'list', 'all', 'all-series', 'for-you', 'feed-stream', 'popular', 'trending', 'latest', 'rank', 'new', 'foryou', 'free', 'new-releases'];
-        commonTabs.forEach(t => params.set(`tab_pages[${t}]`, String(page)));
+        const allTabs = new Set([...knownKeys, ...commonTabs]);
+        allTabs.forEach(t => params.set(`tab_pages[${t}]`, String(page)));
       }
 
       const url = `${BASE_URL}/home/providers/sections?${params.toString()}`;
@@ -171,7 +201,17 @@ export async function fetchSections(provider = 'anyreel', page = 1, query = '', 
     });
     // Remove empty sections
     data.sections = data.sections.filter(sec => Array.isArray(sec.items) && sec.items.length > 0);
+    // Annotate page and record dynamic tab keys
+    data.sections.forEach(sec => {
+      sec.page = page;
+    });
+    const discoveredKeys = data.sections.map(s => s.tab_key).filter(Boolean);
+    if (discoveredKeys.length > 0) {
+      providerTabKeysCache.set(normProvider, discoveredKeys);
+    }
   }
+
+  data.page = page;
 
   return {
     ok: true,

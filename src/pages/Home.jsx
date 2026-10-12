@@ -2,7 +2,16 @@ import React, { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Spin, Alert, Empty } from 'antd';
-import { LoadingOutlined, CheckCircleOutlined, CloudSyncOutlined, DatabaseOutlined, SyncOutlined } from '@ant-design/icons';
+import {
+  LoadingOutlined,
+  CheckCircleOutlined,
+  CloudSyncOutlined,
+  DatabaseOutlined,
+  SyncOutlined,
+  LeftOutlined,
+  RightOutlined,
+  DoubleLeftOutlined,
+} from '@ant-design/icons';
 import { fetchProviderSections, searchDramas } from '../services/api';
 import { useDramaStore } from '../store/useDramaStore';
 import { FALLBACK_DATA } from '../services/fallbackData';
@@ -14,11 +23,14 @@ import { SearchBar } from '../components/SearchBar';
 
 export function Home() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlProvider = searchParams.get('provider') || '';
-  const { selectedProvider, setSelectedProvider, searchQuery, activeTag } = useDramaStore();
+  // Support both 'tab-provider' and 'provider' query parameters from URL
+  const urlProvider = searchParams.get('tab-provider') || searchParams.get('provider') || '';
+  const urlPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+  const { selectedProvider, setSelectedProvider, searchQuery, activeTag, setActiveTag } = useDramaStore();
 
   // Active provider prioritizes URL query param, falls back to store, then 'anyreel'
   const activeProvider = urlProvider || selectedProvider || 'anyreel';
+  const currentPage = urlPage;
 
   // Keep store in sync when URL changes (e.g. browser back/forward, direct link)
   useEffect(() => {
@@ -27,24 +39,42 @@ export function Home() {
     }
   }, [urlProvider, selectedProvider, setSelectedProvider]);
 
-  // Handle provider selection: update both Zustand and browser URL
+  // Handle provider selection: update both Zustand and browser URL, reset page to 1
   const handleSelectProvider = (provKey) => {
     const key = (!provKey || provKey === 'all') ? 'all' : provKey;
     setSelectedProvider(key);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (key && key !== 'all') {
+        next.set('tab-provider', key);
         next.set('provider', key);
       } else {
+        next.delete('tab-provider');
         next.delete('provider');
       }
+      next.set('page', '1');
       return next;
     }, { replace: false });
   };
 
+  // Handle pagination navigation
+  const handlePageChange = (newPage) => {
+    const targetPage = Math.max(1, newPage);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('page', String(targetPage));
+      if (activeProvider && activeProvider !== 'all') {
+        next.set('tab-provider', activeProvider);
+        next.set('provider', activeProvider);
+      }
+      return next;
+    }, { replace: false });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const queryProvider = activeProvider === 'all' ? 'anyreel' : activeProvider;
 
-  // Use TanStack React Query to fetch provider sections
+  // Use TanStack React Query to fetch provider sections for the active page
   const {
     data,
     isLoading,
@@ -53,8 +83,8 @@ export function Home() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['provider-sections', queryProvider],
-    queryFn: () => fetchProviderSections(queryProvider),
+    queryKey: ['provider-sections', queryProvider, currentPage],
+    queryFn: () => fetchProviderSections(queryProvider, 'vi-VN', currentPage),
     staleTime: 5 * 60 * 1000, // 5 minutes fresh
     gcTime: 30 * 60 * 1000,
   });
@@ -179,12 +209,12 @@ export function Home() {
         <div className="flex items-center gap-2">
           {dataSource === 'network' && (
             <span className="flex items-center gap-1 text-emerald-400">
-              <CheckCircleOutlined /> Dữ liệu trực tuyến từ máy chủ ({activeProviderLabel})
+              <CheckCircleOutlined /> Dữ liệu trực tuyến từ máy chủ ({activeProviderLabel} - Trang {currentPage})
             </span>
           )}
           {dataSource === 'cache' && (
             <span className="flex items-center gap-1 text-amber-400">
-              <DatabaseOutlined /> Đang đọc từ bộ nhớ đệm ({activeProviderLabel})
+              <DatabaseOutlined /> Đang đọc từ bộ nhớ đệm ({activeProviderLabel} - Trang {currentPage})
             </span>
           )}
           {dataSource === 'fallback' && (
@@ -194,10 +224,24 @@ export function Home() {
           )}
           {isFetching && (
             <span className="text-rose-400 flex items-center gap-1.5 font-medium animate-pulse">
-              <SyncOutlined className="animate-spin" /> Đang tải phim từ {activeProviderLabel}...
+              <SyncOutlined className="animate-spin" /> Đang tải trang {currentPage} ({activeProviderLabel})...
             </span>
           )}
         </div>
+        {currentPage > 1 && (
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/30 text-rose-300 font-bold text-[11px]">
+              Trang {currentPage}
+            </span>
+            <button
+              type="button"
+              onClick={() => handlePageChange(1)}
+              className="text-slate-400 hover:text-white hover:underline text-[11px] cursor-pointer"
+            >
+              Về trang 1
+            </button>
+          </div>
+        )}
       </div>
 
       {isLoading && !data ? (
@@ -306,13 +350,92 @@ export function Home() {
               />
             </div>
           ) : sections.length > 0 ? (
-            sections.map((section) => (
-              <SectionRow
-                key={section.tab_key || section.tab_label}
-                section={section}
-                activeFilter={activeTag}
-              />
-            ))
+            <>
+              {sections.map((section) => (
+                <SectionRow
+                  key={section.tab_key || section.tab_label}
+                  section={section}
+                  activeFilter={activeTag}
+                />
+              ))}
+
+              {/* Provider Pagination Controls */}
+              <div className="mt-10 mb-6 flex flex-col items-center justify-center gap-3 p-5 rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 shadow-xl backdrop-blur-md">
+                <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+                  <span>Trang hiện tại:</span>
+                  <span className="px-2.5 py-0.5 rounded-lg bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30">
+                    Trang {currentPage}
+                  </span>
+                  <span>• Nhà cung cấp:</span>
+                  <span className="text-white font-semibold">{activeProviderLabel}</span>
+                </div>
+
+                <div className="flex items-center justify-center flex-wrap gap-2 pt-1">
+                  {/* Trang đầu */}
+                  {currentPage > 2 && (
+                    <button
+                      type="button"
+                      disabled={isFetching}
+                      onClick={() => handlePageChange(1)}
+                      title="Về trang đầu"
+                      className="flex items-center justify-center h-9 w-9 rounded-xl text-xs font-bold bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition-all cursor-pointer active:scale-95"
+                    >
+                      <DoubleLeftOutlined />
+                    </button>
+                  )}
+
+                  {/* Trang trước */}
+                  <button
+                    type="button"
+                    disabled={currentPage <= 1 || isFetching}
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      currentPage <= 1 || isFetching
+                        ? 'opacity-40 cursor-not-allowed bg-slate-900 text-slate-500 border border-slate-800'
+                        : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 hover:border-rose-500/50 shadow-sm active:scale-95'
+                    }`}
+                  >
+                    <LeftOutlined className="text-xs" />
+                    <span>Trang trước</span>
+                  </button>
+
+                  {/* Dynamic page numbers */}
+                  {Array.from({ length: 5 }, (_, i) => {
+                    const p = Math.max(1, currentPage - 2) + i;
+                    return p;
+                  }).map((pageNum) => (
+                    <button
+                      key={pageNum}
+                      type="button"
+                      disabled={isFetching}
+                      onClick={() => handlePageChange(pageNum)}
+                      className={`h-9 min-w-[36px] px-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center cursor-pointer ${
+                        currentPage === pageNum
+                          ? 'bg-gradient-to-r from-rose-600 to-pink-600 text-white shadow-lg shadow-rose-600/30 scale-105 border border-rose-400/30'
+                          : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 active:scale-95'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  ))}
+
+                  {/* Trang sau */}
+                  <button
+                    type="button"
+                    disabled={isFetching}
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      isFetching
+                        ? 'opacity-40 cursor-not-allowed bg-slate-900 text-slate-500 border border-slate-800'
+                        : 'bg-gradient-to-r from-rose-600/90 to-pink-600/90 hover:from-rose-500 hover:to-pink-500 text-white border border-rose-500/40 shadow-md shadow-rose-600/20 active:scale-95'
+                    }`}
+                  >
+                    <span>Trang sau</span>
+                    <RightOutlined className="text-xs" />
+                  </button>
+                </div>
+              </div>
+            </>
           ) : !isFetching ? (
             <div className="py-16 text-center">
               <Empty

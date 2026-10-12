@@ -7,11 +7,12 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') { res.status(204).end(); return; }
 
   try {
-    const provider = req.query.provider || 'anyreel';
+    const provider = req.query.provider || req.query['tab-provider'] || 'anyreel';
     const page = parseInt(req.query.page || '1', 10);
     const q = req.query.q || '';
     const lang = req.query.lang || 'vi-VN';
-    const data = await fetchSections(provider, page, q, lang);
+    const onlyTab = req.query.only_tab || '';
+    const data = await fetchSections(provider, page, q, lang, onlyTab);
     res.json(data);
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });

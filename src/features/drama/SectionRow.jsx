@@ -57,8 +57,13 @@ export function SectionRow({ section, activeFilter = 'all' }) {
             <span>{section.tab_label}</span>
           </h2>
           <span className="rounded-full bg-slate-900 border border-slate-800 px-2.5 py-0.5 text-xs font-bold text-slate-400">
-            {filteredItems.length}
+            {filteredItems.length} phim
           </span>
+          {section.page && section.page > 1 && (
+            <span className="rounded-full bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold text-rose-300">
+              Trang {section.page}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

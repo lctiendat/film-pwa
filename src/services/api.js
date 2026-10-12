@@ -47,20 +47,23 @@ export async function fetchLiveProviders() {
  */
 export async function fetchProviderSections(provider = '', lang = 'vi-VN', page = 1) {
   const provKey = (!provider || provider === 'all') ? 'anyreel' : provider;
+  const pageNum = Math.max(1, parseInt(page || 1, 10));
   const query = new URLSearchParams({
     provider: provKey,
+    'tab-provider': provKey,
     lang: lang || 'vi-VN',
-    page: String(page || 1),
+    page: String(pageNum),
   }).toString();
 
   // Tier 1: Local crawler endpoint
   try {
     const response = await apiClient.get(`/api/sections?${query}`);
     if (response.data && response.data.ok) {
-      await saveSectionsCache(provKey, response.data);
+      await saveSectionsCache(provKey, response.data, pageNum);
       return {
         ...response.data,
         active_provider: response.data.active_provider || provKey,
+        page: pageNum,
         _source: 'network',
       };
     }
@@ -68,27 +71,29 @@ export async function fetchProviderSections(provider = '', lang = 'vi-VN', page 
     console.warn(`[API] /api/sections failed:`, err.message);
   }
 
-  // Tier 2: Check IndexedDB cache
-  const cached = await getSectionsCache(provKey);
+  // Tier 2: Check IndexedDB cache for this provider & page
+  const cached = await getSectionsCache(provKey, pageNum);
   if (cached && cached.ok && Array.isArray(cached.sections) && cached.sections.length > 0) {
     return {
       ...cached,
       active_provider: cached.active_provider || provKey,
+      page: pageNum,
       _source: 'cache',
     };
   }
 
-  // Tier 3: Built-in fallback dataset (ONLY use AnyReel fallback if provider is indeed anyreel or all)
-  if (provKey === 'anyreel' || provKey === 'all') {
+  // Tier 3: Built-in fallback dataset (ONLY use AnyReel fallback if provider is anyreel/all and page is 1)
+  if ((provKey === 'anyreel' || provKey === 'all') && pageNum === 1) {
     return {
       ...FALLBACK_DATA,
       active_provider: provKey,
+      page: 1,
       _source: 'fallback',
     };
   }
 
   // If network call failed (no cached data), throw so UI shows the retry alert instead of an empty screen
-  throw new Error(`Không thể kết nối đến máy chủ lấy dữ liệu của nhà cung cấp "${provKey}". Vui lòng bấm Thử lại.`);
+  throw new Error(`Không thể kết nối đến máy chủ lấy dữ liệu của nhà cung cấp "${provKey}" (Trang ${pageNum}). Vui lòng bấm Thử lại.`);
 }
 
 /**

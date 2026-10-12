@@ -30,13 +30,16 @@ export async function getDB() {
   });
 }
 
-// --- Sections Caching ---
-export async function saveSectionsCache(providerKey, data) {
+// --- Sections Caching with Pagination Support ---
+export async function saveSectionsCache(providerKey, data, page = 1) {
   try {
     const db = await getDB();
+    const pageNum = Math.max(1, parseInt(page || 1, 10));
+    const cacheKey = `${providerKey || 'default'}_p${pageNum}`;
     await db.put('sections_cache', {
-      providerKey: providerKey || 'default',
+      providerKey: cacheKey,
       data,
+      page: pageNum,
       updatedAt: Date.now(),
     });
   } catch (err) {
@@ -44,10 +47,16 @@ export async function saveSectionsCache(providerKey, data) {
   }
 }
 
-export async function getSectionsCache(providerKey) {
+export async function getSectionsCache(providerKey, page = 1) {
   try {
     const db = await getDB();
-    const result = await db.get('sections_cache', providerKey || 'default');
+    const pageNum = Math.max(1, parseInt(page || 1, 10));
+    const cacheKey = `${providerKey || 'default'}_p${pageNum}`;
+    let result = await db.get('sections_cache', cacheKey);
+    // Backward compatibility for unversioned keys if page 1
+    if (!result && pageNum === 1) {
+      result = await db.get('sections_cache', providerKey || 'default');
+    }
     return result ? result.data : null;
   } catch (err) {
     console.warn('[IndexedDB] getSectionsCache error:', err);
